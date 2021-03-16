@@ -2,12 +2,12 @@ import os
 import requests
 import json
 import time
+import datetime
 import pickle
 import re
 import argparse
 import shutil
-from concurrent.futures import ThreadPoolExecutor
-
+import concurrent.futures
 
 # import pandas as pd
 
@@ -41,7 +41,7 @@ def load_token(filename, username=None, password=None):
     """Get token (could load but don't know when expires)"""
     if os.path.isfile(filename):
         pass
-        #with open(filename, 'rb') as f:
+        # with open(filename, 'rb') as f:
         #    return pickle.load(f)
 
     token = get_token(username, password)
@@ -53,59 +53,80 @@ def get_all_links(data_type, data_url, headers, session, links_all):
     response = session.get(data_url, headers=headers)
     print(data_url)
     soup = BeautifulSoup(response.text, "lxml")
-    #print(soup.prettify())
+    # print(soup.prettify())
     links = []
     for link in soup.find_all("a"):
         l = link.get("href")
         if l[0] != "?":
             if not links or links[-1] != l:
                 links.append(l)
-    #print(links)
+    # print(links)
     for l in links:
         if l[0:5] != "SVDNB":
-            if l[0:2] == "20" and l[2:4] >= "20" or l[0:2] != "20":
+            if l[0:2] == "20" and l[2:4] >= "18" or l[0:2] != "20":
                 get_all_links(data_type, data_url + "/" + l, headers, session, links_all)
         else:
             if data_type == "nightly" or data_type == "monthly" and "75N060W" in l:
                 links_all.append(data_url + "/" + l)
     return links_all
 
-# TODO: parallel downloading
-def download_url(url, output_file, session, headers):
-    if not os.path.isfile(output_file):
+
+def download_url(url, save_path_2_level, session, headers, check_size=False):
+    """Download from url to output with checking that if the file exists it has the needed size"""
+    # Get name of the folder - save_type
+    i = -2
+    while not url.split("/")[i]:
+        i -= 1
+    save_type = url.split("/")[i]  # cloud_cover, rade9d, vcmcfg or vcmlscfg
+
+    save_path = os.path.join(save_path_2_level, save_type)
+    os.makedirs(save_path, exist_ok=True)
+    output_file = os.path.join(save_path, url.split("/")[-1])
+    if not os.path.isfile(output_file) or check_size:
         with session.get(url, headers=headers, stream=True) as response:
             if response.status_code == 200:
-                size = int(response.headers.get('content-length')) / pow(2, 20)
+                size = int(response.headers.get('content-length'))
+                print("Processing {}".format(output_file))
+                if os.path.isfile(output_file):
+                    if os.path.getsize(output_file) == size:
+                        return 0
+                    else:
+                        os.remove(output_file)
+                        print(f"Removed partially downloaded {output_file}")
                 t = time.strftime("%H:%M:%S", time.localtime())
-                print("{} Downloading {} of size {:.2f} MB".format(t, url, size), end="")
+                print("{} Downloading {} of size {:.2f} MB".format(t, url, size / pow(2, 20)), end="\n")
                 st1 = time.time()
                 with open(output_file, 'wb') as f:
                     shutil.copyfileobj(response.raw, f)
-                print(", speed {:.2f} MB/s".format(size / (time.time() - st1)))
+                t = time.strftime("%H:%M:%S", time.localtime())
+                print("{} Downloaded {} speed {:.2f} MB/s".format(t, url, size / pow(2, 20) / (time.time() - st1)))
             else:
                 print("Failed with {}, status {}".format(url, response.status_code))
         return output_file
     else:
         return 0
 
+
 def main(args):
     username = "antonma@student.ethz.ch"
     password = "EJXYY8tmDC6crMw"
-    root_path = "/media/anton/Transcend/COVID19_Remote" # "/home/anton/COVID19_Remote" #
-    data_type = "nightly" #"monthly" #
-    sub_type = "rade9d" # "cloud_cover" #
+    root_path = "/home/anton/COVID19_Remote" # "/media/anton/Transcend/COVID19_Remote"  #
+    data_type = "nightly"  # "monthly" #
+    sub_type =  "rade9d" # "cloud_cover"  #
+    max_workers = 4 # None
+
     if data_type == "monthly":
         sub_type = "v10"
 
     data_url = "https://eogdata.mines.edu/nighttime_light/" + data_type + "/" + sub_type
 
     if sub_type == "cloud_cover":
-        time_min = "20200226"  # "20180101"
+        time_min = "20180125"  # "20180101"
     elif sub_type == "rade9d":
-        time_min = "20180212"
+        time_min = "20180416"
     else:
         time_min = "20180112"
-    time_max = "20201231"
+    time_max = datetime.datetime.today().strftime('%Y%m%d')
 
     start = time.time()
 
@@ -117,30 +138,31 @@ def main(args):
     # get all the downloadable links from subdirectories of data_url
     session = requests.Session()
     links = get_all_links(data_type, data_url, headers, session, [])
-    print('Overall files: {}'.format(len(links)))
 
     # extract times and filter
     times = [re.findall(r'\d+', l.split("/")[-1])[0] for l in links]
     links_dwn = [l for i, l in enumerate(links) if times[i] >= time_min and times[i] <= time_max]
-    #print(times)
+    #links_dwn = links_dwn[0:5]
+    print('Overall files: {}, to download {}'.format(len(links), len(links_dwn)))
 
-    sizes = []
-    for l in links_dwn:
-        i = -2
-        while not l.split("/")[i]:
-            i -= 1
-        save_type = l.split("/")[i]  # cloud_cover, rade9d, vcmcfg or vcmlscfg
-        save_path = os.path.join(root_path, "01_raw_data", data_type, save_type)
-        print(save_path)
-        os.makedirs(save_path, exist_ok=True)
-        output_file = os.path.join(save_path, l.split("/")[-1])
-        #results = ThreadPool(8).imap_unordered(fetch_url, urls)
-        download_url(l, output_file, session, headers)
+    save_path_2_level = os.path.join(root_path, "01_raw_data", data_type)
+    # Download/check urls in parallel with threads
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_url = {executor.submit(download_url, url, save_path_2_level, session, headers, check_size=True):
+                             url for url in links_dwn}
+        for future in concurrent.futures.as_completed(future_to_url):
+            url = future_to_url[future]
+        try:
+            res = future.result()
+        except Exception as exc:
+            print('%r generated an exception: %s' % (url, exc))
+        else:
+            print('%r page is %d bytes' % (url, res))
 
     end = time.time()
-    print("Elapsed time {} minutes".format((end - start)/60.0))
-    #print("Average speed {} MB/s".format(sum(sizes)/(end - start)))
-    # TODO: add check of file size
+    print("Elapsed time {} minutes".format((end - start) / 60.0))
+    # print("Average speed {} MB/s".format(sum(sizes)/(end - start)))
+
 
 if __name__ == '__main__':
     args = parser.parse_args()
