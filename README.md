@@ -1,2 +1,2 @@
-# RA_geo
-Download multiple geoimages from https://eogdata.mines.edu/nighttime_light
+Download multiple GeoTIff images from https://eogdata.mines.edu/nighttime_light
+Label raster pixels according to the municipalities they intersect and get these areas 
