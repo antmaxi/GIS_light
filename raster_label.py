@@ -4,15 +4,22 @@
 import os
 import sys
 import subprocess
+import platform
 import shutil
 import logging
 import time
 import csv
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-n', type=int,  help='number of programs to run in parallel', default=3)
+parser.add_argument('--id', type=int,  help='id of the program run', default=0)
+parser.add_argument('--debug', type=bool, help='to run in debug (small) mode or not', default=False)
+import concurrent.futures
 
 import gc
 
 from csv import writer
-import pandas as pd
 
 # QGIS imports
 from osgeo import gdal
@@ -35,8 +42,19 @@ from processing.core.Processing import Processing
 import processing
 
 
-def get_intersect_ids_and_areas(i, j, raster_file, tiles, temp, result_name, tile_size_x=None, tile_size_y=None,
-                                level=None, pixel_sizes=None, check_intersection=True, LOG=None, remove_all=True):
+def delete_layers():
+    if 1:
+        for l in QgsProject.instance().mapLayers().values():
+            QgsProject.instance().removeMapLayer(l.id())
+        for l in QgsProject.instance().mapLayers().values():
+            print(l.name())
+    return 0
+
+
+def get_intersect_ids_and_areas(i, j, raster_file, tiles, temp, result_name, global_count,
+                                tile_size_x=None, tile_size_y=None,
+                                level=None, pixel_sizes=None, check_intersection=True, LOG=None, remove_all=True,
+                                path_to_gdal=None):
     '''
     :param level:
     :param i:
@@ -49,7 +67,7 @@ def get_intersect_ids_and_areas(i, j, raster_file, tiles, temp, result_name, til
     :return:
     '''
     LOG.info("Processing i={} j={} size={}".format(i, j, tile_size_x))
-    if remove_all:
+    if not os.path.exists(temp):
         os.makedirs(temp, exist_ok=True)
     out_name = os.path.join(temp, ("tile_" + str(i) + "_" + str(j) + "_" + str(tile_size_x) + ".tif"))
 
@@ -60,27 +78,41 @@ def get_intersect_ids_and_areas(i, j, raster_file, tiles, temp, result_name, til
     com_string = "gdal_translate -of GTIFF -q -srcwin " + str(i) + ", " + str(j) + ", " + str(
         tile_size_x) + ", " + str(tile_size_y) + " " + raster_file + " " + out_name
     os.system(com_string)
+    # make uniform-value big square area
     if tile_size_x > 1:
         LOG.debug("Extracted square area")
-
+        out_name_new = os.path.join(temp, ("tile_" + str(i) + "_" + str(j) + "_" + str(tile_size_x) + "_uniform.tif"))
         # create pixel with the same shape but with single-value band for further polygonizing to only one tile
         parameters = {'INPUT_A': out_name,
                       'BAND_A': 1,
                       'FORMULA': '(0.01)',
-                      'OUTPUT': out_name}  # 'memory:buffer'}
-
-        processing.runAndLoadResults('gdal:rastercalculator', parameters)
+                      'OUTPUT': out_name_new  # 'memory:buffer'  #
+        }
+        if platform.system() == "Linux":
+            processing.runAndLoadResults('gdal:rastercalculator', parameters)
+        elif platform.system() == "Windows":
+            subprocess.run([sys.executable, os.path.join(path_to_gdal, "gdal_calc.py"),
+                            "--calc", "1", "--outfile", out_name_new,
+                            "-A", out_name,],
+                           check=True)
         LOG.debug("Made single-value square subarea")
-
+        out_name = out_name_new
     # polygonize pixel
-    polygon_filename = "tile_" + str(i) + "_" + str(j) + "_" + str(tile_size_x)
-    subprocess.run(["gdal_polygonize.py", out_name, temp, polygon_filename])
-    # load polygonized pixel back
-    pixel_polygon = QgsVectorLayer(os.path.join(temp, (polygon_filename + ".shp")), "Polygon layer", "ogr")
-    if not pixel_polygon.isValid():
-        LOG.warning("Layer failed to load!")
+    polygon_filename = "tile_" + str(i) + "_" + str(j) + "_" + str(tile_size_x) + "_poly"
+    if platform.system() == "Linux":
+        subprocess.run(["gdal_polygonize.py", out_name, temp, polygon_filename])
     else:
-        QgsProject.instance().addMapLayer(pixel_polygon)
+        subprocess.run([sys.executable, os.path.join(path_to_gdal, "gdal_polygonize.py"),
+                        out_name, temp, polygon_filename], check=True)
+
+    # load polygonized pixel back
+    pixel_polygon = os.path.join(temp, (polygon_filename + ".shp"))
+    # pixel_polygon = QgsVectorLayer(os.path.join(temp, (polygon_filename + ".shp")), "Polygon layer", "ogr")
+    # if not pixel_polygon.isValid():
+    #     LOG.warning("Layer failed to load!")
+    # else:
+    #     pass
+    #     #QgsProject.instance().addMapLayer(pixel_polygon)
     if tile_size_x > 1:
         LOG.debug("Polygonized area")
 
@@ -101,7 +133,7 @@ def get_intersect_ids_and_areas(i, j, raster_file, tiles, temp, result_name, til
             "PREDICATE": [0]
         }
         tiles_intersect = \
-            processing.run('qgis:extractbylocation', params,
+        processing.run('qgis:extractbylocation', params,
                            )["OUTPUT"]
         if tile_size_x > 1:
             LOG.debug("Found intersection tiles")
@@ -116,86 +148,89 @@ def get_intersect_ids_and_areas(i, j, raster_file, tiles, temp, result_name, til
         layer = \
             processing.run("qgis:intersection", params,
                            )["OUTPUT"]
+
+        #QgsProject.instance().removeMapLayer(pixel_polygon.id())
+
         if tile_size_x > 1:
             LOG.debug("Intersected tiles with pixel")
 
-        # get IDs of intersection tiles
-        feature_ids = [feature["COMM_ID"] for feature in layer.getFeatures()]
-        rows = []
-        if len(feature_ids) > 0:
-            # single pixel or aggregation of pixels?
-            if tile_size_x != 1:
-                # is the whole area inside one municipality or not
-                if len(feature_ids) == 1:
-                    for x in range(0, tile_size_x):
-                        for y in range(0, tile_size_y):
-                            rows.append([i + x, j + y, feature_ids[0], -1, 100.0])
-                    LOG.debug("Done")
+            # get IDs of intersection tiles
+            feature_ids = [feature["COMM_ID"] for feature in layer.getFeatures()]
+            rows = []
+            if len(feature_ids) > 0:
+                # single pixel or aggregation of pixels?
+                if tile_size_x != 1:
+                    # is the whole area inside one municipality or not
+                    if len(feature_ids) == 1:
+                        for x in range(0, tile_size_x):
+                            for y in range(0, tile_size_y):
+                                rows.append([i + x, j + y, feature_ids[0], -1, 100.0])
+                        LOG.debug("Done")
+                    else:
+                        n = pixel_sizes[level] // pixel_sizes[level + 1]
+                        size = pixel_sizes[level + 1]  # current size of "aggregated pixel"
+                        for k in range(n):
+                            for m in range(n):
+                                # LOG.debug
+                                print(f"{i} {j} {size} {k} {m}")
+                                # rows.extend(
+                                delete_layers()
+                                global_count = get_intersect_ids_and_areas(i + k * size, j + m * size,
+                                                                            raster_file, tiles, temp, result_name,
+                                                                            global_count,
+                                                            tile_size_x=size, tile_size_y=size,
+                                                            level=level + 1, pixel_sizes=pixel_sizes,
+                                                            check_intersection=True,
+                                                            LOG=LOG, remove_all=remove_all,
+                                                            path_to_gdal=path_to_gdal)
+
+                                #    )
                 else:
-                    n = pixel_sizes[level] // pixel_sizes[level + 1]
-                    size = pixel_sizes[level + 1]  # current size of "aggregated pixel"
-                    for k in range(n):
-                        for m in range(n):
-                            # LOG.debug
-                            print(f"{size} {k} {m}")
-                            # rows.extend(
-                            for l in QgsProject.instance().layerTreeRoot().findLayers():
-                                del l
-                            for l in QgsProject.instance().layerTreeRoot().findLayers():
-                                print(l.name())
-                            for l in QgsProject.instance().mapLayers().values():
-                                del l
-                            for l in QgsProject.instance().mapLayers().values():
-                                print(l.name())
-                            get_intersect_ids_and_areas(i + k * size, j + m * size, raster_file, tiles, temp,
-                                                        result_name,
-                                                        tile_size_x=size, tile_size_y=size,
-                                                        level=level + 1, pixel_sizes=pixel_sizes,
-                                                        check_intersection=True,
-                                                        LOG=LOG, remove_all=remove_all)
-                            #    )
-            else:
-                d = QgsDistanceArea()
-                d.setEllipsoid('WGS84')
-                areas = []
-                k = 0
-                for k, feature in enumerate(layer.getFeatures()):
-                    # get area of intersection in km^2
-                    areas.append(
-                        d.convertAreaMeasurement(d.measureArea(feature.geometry()), QgsUnitTypes.AreaSquareKilometers))
-                for ind in range(k + 1):
-                    rows.append([i, j, feature_ids[ind],
-                                 "{:.6f}".format(areas[ind]), "{:.4f}".format((areas[ind] / sum(areas)) * 100.0)])
-            with open(result_name, "a+", newline="") as file:
-                filewriter = csv.writer(file)
-                for row in rows:
-                    if row:
-                        filewriter.writerow(row)
-                        LOG.debug(row)
-            # remove loaded layers
-            for l in QgsProject.instance().layerTreeRoot().findLayers():
-                del l
-            for l in QgsProject.instance().layerTreeRoot().findLayers():
-                print(l.name())
-            for l in QgsProject.instance().mapLayers().values():
-                del l
-            for l in QgsProject.instance().mapLayers().values():
-                print(l.name())
-            # QgsMapLayerRegistry.instance().addMapLayer(myMemoryLayer)
-            # QgsMapLayerRegistry.instance().removeMapLayer(myMemoryLayer.id())
-            if remove_all:
-                shutil.rmtree(temp, ignore_errors=True)
-    # return rows
+                    d = QgsDistanceArea()
+                    d.setEllipsoid('WGS84')
+                    areas = []
+                    k = 0
+                    for k, feature in enumerate(layer.getFeatures()):
+                        # get area of intersection in km^2
+                        areas.append(
+                            d.convertAreaMeasurement(d.measureArea(feature.geometry()),
+                                                     QgsUnitTypes.AreaSquareKilometers))
+                    for ind in range(k + 1):
+                        rows.append([i, j, feature_ids[ind],
+                                     "{:.6f}".format(areas[ind]), "{:.4f}".format((areas[ind] / sum(areas)) * 100.0)])
+                with open(result_name, "a+", newline="") as file:
+                    filewriter = csv.writer(file)
+                    for row in rows:
+                        if row:
+                            filewriter.writerow(row)
+                            LOG.debug(row)
+                # remove loaded layers
+                delete_layers()
+        global_count += tile_size_x * tile_size_y
+        return global_count
+                # QgsMapLayerRegistry.instance().addMapLayer(myMemoryLayer)
+                # QgsMapLayerRegistry.instance().removeMapLayer(myMemoryLayer.id())
+                #if remove_all:
+                #    shutil.rmtree(temp, ignore_errors=False)
+    #delete_layers()
 
 
-def main():
+
+def main(args):
     ##############################################################
     #                    INITIALIZATION
     ##############################################################
-    qgis_path = "/home/anton/anaconda3/envs/arcgis/bin/qgis"
+    if platform.system() == "Linux":
+        qgis_path = "/home/anton/anaconda3/envs/arcgis/bin/qgis"
+        path_to_gdal = None
+    elif platform.system() == "Windows":
+        qgis_path = r"C:\Users\antonma\Anaconda3\envs\qgis\Library\python\qgis"
+        path_to_gdal = "C:\ProgramData\Anaconda3\envs\qgis\Scripts"
+    else:
+        assert "Not Windows or Linux, not guaranteed to work"
 
-    folder = r"/home/anton/Documents/GIT/RA/pixel"
-    temp = os.path.join(folder, "temp")
+    folder = os.path.join(os.getcwd(), "pixel")
+    temp = os.path.join(folder, "temp" + str(args.id))
 
     raster_name = r"SVDNB_npp_d20190329.rade9d.tif"  # light raster map
     raster_file = os.path.join(folder, raster_name)
@@ -206,11 +241,11 @@ def main():
     check_intersection = True
 
     if check_intersection:
-        result_name = os.path.join(folder, "pixel_intersections." + result_format)
+        result_name = os.path.join(folder, "pixel_intersections" + str(args.id) + "." + result_format)
         result_header = ['X', 'Y', 'COMM_ID', 'AREA', 'AREA_PERCENT']
         pixel_sizes = [
-            125, 25,
-            5,
+            40, 8, 4,
+            2,
             1]
     else:
         result_name = os.path.join(folder, "pixel_areas." + result_format)
@@ -221,9 +256,8 @@ def main():
     rewrite_result = True
     result_writer_freq = 1
 
-    remove_all = True
+    remove_all = False
 
-    debug = True
     france = True
 
     # Calculation of needed area:
@@ -232,10 +266,12 @@ def main():
     # size of raster 86401 x 33601
     # => needed pixels approx x: 40300 - 53000 , y (map and raster coords are opposite): 0 - 10800
     # total approx 137 millions of pixels
-    if not debug:
+    if not args.debug:
         if france:  # -5.3 x 10, 41 x 51.5 => in pixels: 42400 - 45600,
-            start_x = 42400
-            end_x = 45600
+            start_x_0 = 43200
+            end_x =  45600
+            start_x = start_x_0 + (end_x - start_x_0) // args.n * args.id
+            end_x = start_x_0 + (end_x - start_x_0) // args.n * (args.id + 1)
             start_y = 5600
             end_y = 8160
         else:
@@ -250,9 +286,9 @@ def main():
         end_y = 6500
 
     #  set logging level
-    if debug:
+    if args.debug:
         logging.basicConfig(format='%(message)s',
-                            level=logging.DEBUG)  # choose between WARNING - INFO - DEBUG
+                            level=logging.INFO)  # choose between WARNING - INFO - DEBUG
     else:
         logging.basicConfig(format='%(message)s',
                             level=logging.WARNING)
@@ -264,19 +300,11 @@ def main():
     QgsApplication.setPrefixPath('/usr', True)
     QgsApplication.setPrefixPath(qgis_path, True)
     sys.path.append('/usr/share/qgis/python/plugins')
-    # Create a reference to the QgsApplication.  Setting the second argument to False disables the GUI.
-    qgs = QgsApplication([], False)
-    # Load providers
-    qgs.initQgis()
-    Processing.initialize()
     ##############################################################
     #                       START WORK
     ##############################################################
     start = time.time()
-    ds = gdal.Open(str(raster_file))
-    band = ds.GetRasterBand(1)
-
-    LOG.info("Size of initial raster {} x {}".format(band.XSize, band.YSize))
+    #LOG.info("Size of initial raster {} x {}".format(band.XSize, band.YSize))
     if rewrite_result:
         if os.path.exists(result_name):
             os.remove(result_name)
@@ -284,47 +312,39 @@ def main():
             filewriter = csv.writer(file, delimiter=",")
             filewriter.writerow(result_header)
     count = 0
-    result_buffer = []
+    #result_buffer = []
 
+    # Create a reference to the QgsApplication.  Setting the second argument to False disables the GUI.
+    qgs = QgsApplication([], False)
+    # Load providers
+    qgs.initQgis()
+    Processing.initialize()
+    #ds = gdal.Open(str(raster_file))
+    global_count = 0
     #  iterate over pixels in rectangular zone of input raster
     for i in range(start_x, end_x, pixel_sizes[0]):
         # get empty directory for vectorized pixels
-        shutil.rmtree(str(temp), ignore_errors=True)
-        os.makedirs(temp, exist_ok=True)
+        if remove_all:
+            shutil.rmtree(str(temp), ignore_errors=True)
+        if not os.path.exists(temp):
+            os.makedirs(temp, exist_ok=True)
         for j in range(start_y, end_y, pixel_sizes[0]):
-            get_intersect_ids_and_areas(i, j, raster_file, tiles, temp, result_name,
+            global_count = get_intersect_ids_and_areas(i, j, raster_file, tiles, temp, result_name, global_count,
                                         tile_size_x=pixel_sizes[0], tile_size_y=pixel_sizes[0],
                                         level=0, pixel_sizes=pixel_sizes,
                                         check_intersection=check_intersection,
-                                        LOG=LOG, remove_all=remove_all)
+                                        LOG=LOG, remove_all=remove_all, path_to_gdal=path_to_gdal
+                                        )
             print(f"Done big tile {i} {j}")
-            # LOG.debug(result_rows)
-            # result_buffer.append(result_rows)
-            count += 1  # len(result_rows)
+            count += 1
             print(f"{time.strftime('%H:%M:%S', time.localtime())}, "
                   f"global speed per 1 Mpixel {((time.time() - start) / count / (pixel_sizes[0] ** 2) * 10 ** 6):.2}s, "
                   f"processed pixels: {count * pixel_sizes[0] ** 2 // 10 ** 6} M {count * pixel_sizes[0] ** 2 % 10 ** 6 // 10 ** 3} K")
 
-            # Append rows to csv file
-            LOG.info("{} {}".format(i, j))
-            # for row in result_rows:
-            #     LOG.info(row)
-            # with open(log_pixel, "a+") as f:
-            #     f.write("\n {} {}".format(i, j))
-            # if len(result_buffer) // result_writer_freq >= 1:
-            #
-            #     with open(result_name, "a+", newline="") as file:
-            #         filewriter = csv.writer(file)
-            #         for rows in result_buffer:
-            #             for row in rows:
-            #                 if row:
-            #                     filewriter.writerow(row)
-            #     LOG.info(f"Dumped rows to {result_name}")
-            #     result_buffer = []
-
-            # Finally, exitQgis() is called to remove the provider and layer registries from memory
-
-    QgsProject.instance().removeAllMapLayers()
+            QgsProject.instance().removeAllMapLayers()
+            if remove_all:
+                shutil.rmtree(temp, ignore_errors=True)
+    # Finally, exitQgis() is called to remove the provider and layer registries from memory
     qgs.exit()
 
     end = time.time()
@@ -332,4 +352,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    args = parser.parse_args()
+    main(args)
