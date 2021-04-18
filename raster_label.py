@@ -12,9 +12,16 @@ import csv
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-n', type=int,  help='number of programs to run in parallel', default=1)
-parser.add_argument('--id', type=int,  help='id of the program run', default=0)
+parser.add_argument('-n', type=int,  help='number of programs to run in parallel, divide x-axis', default=1)
+parser.add_argument('-m', type=int,  help='number of subprograms to run consequently, divide y-axis', default=1)
+parser.add_argument('--id_x', type=int,  help='id of the program run on x-axis', default=0)
+parser.add_argument('--id_y', type=int,  help='id of the program run on y-axis', default=0)
 parser.add_argument('--debug', type=bool, help='to run in debug (small) mode or not', default=False)
+parser.add_argument('--rewrite_result', type=bool,
+                    help='whether to rewrite or rather append the resulting csv/xlsx file', default=False)
+parser.add_argument('--tilename', type=str, help='name of the file with tiles', default="France")
+parser.add_argument('--result_name', type=str, help='name of the file with tiles', default="pixels")
+parser.add_argument('--country', type=str, help='name of the country to process', default=None)
 import concurrent.futures
 
 import gc
@@ -103,8 +110,8 @@ def get_intersect_ids_and_areas(i, j, raster_file, tiles, temp, result_name, glo
     :return:
     '''
     LOG.info("Processing i={} j={} size={}".format(i, j, tile_size_x))
-    if not os.path.exists(temp):
-        os.makedirs(temp, exist_ok=True)
+    #if not os.path.exists(temp):
+    #    os.makedirs(temp, exist_ok=True)
     #out_name = os.path.join(temp, ("tile_" + str(i) + "_" + str(j) + "_" + str(tile_size_x) + ".tif"))
 
     # TODO: keep all intermediate files in memory (but prevent overfloating as before when tried),
@@ -210,6 +217,7 @@ def get_intersect_ids_and_areas(i, j, raster_file, tiles, temp, result_name, glo
                     if row:
                         filewriter.writerow(row)
                         LOG.debug(row)
+                        #print(row)
             debug_output_with_time("Dumped results", ts, LOG)
             # remove loaded layers
             delete_layers()
@@ -233,7 +241,7 @@ def main(args):
         assert "Not Windows or Linux, not guaranteed to work"
 
     folder = os.path.join(os.getcwd(), "pixel")
-    temp = os.path.join(folder, "temp" + str(args.id))
+    #temp = os.path.join(folder, "temp" + "_" + str(args.id_x) + "_" + str(args.id_y))
 
     raster_name = r"SVDNB_npp_d20190329.rade9d.tif"  # light raster map
     raster_file = os.path.join(folder, raster_name)
@@ -243,10 +251,12 @@ def main(args):
     check_intersection = True
 
     if check_intersection:
-        result_name = os.path.join(folder, "pixel_intersections" + str(args.id) + "." + result_format)
+        result_name = args.result_name # os.path.join(folder, args.result_name
+                                   #+ "." + result_format)
         result_header = ['X', 'Y', 'NUTS_CODE', 'COMM_ID', 'AREA', 'AREA_PERCENT']
         pixel_sizes = [
-            40, 8, 4,
+            40,
+            8,
             2,
             1]
     else:
@@ -255,14 +265,13 @@ def main(args):
         pixel_sizes = [1]
 
     log_pixel = os.path.join(folder, "log_pixel.txt")
-    rewrite_result = True
     result_writer_freq = 1
 
     remove_all = False
 
-    france = True
-    if france:
-        tiles = os.path.join(folder, "tiles", "France" + str(args.id) + ".shp")
+    country = args.country #"France"
+    if country:
+        tiles = os.path.join(folder, "tiles", args.tilename + ".shp")
     else:
         tiles = os.path.join(folder, "tiles", "COMM_RG_01M_2016_4326.shp")  # map of municipalities
     # Calculation of needed area:
@@ -274,29 +283,62 @@ def main(args):
     # size of raster 86401 x 33601
     # => needed pixels approx x: 40300 - 53000 , y (map and raster coords are opposite): 0 - 10800
     # total approx 137 millions of pixels
-    if not args.debug:
-        if france:  # -5.3 x 10, 41 x 51.5 => in pixels: 42400 - 45600,
-            start_x_0 = 43200
-            end_x =  45600
-            start_x = start_x_0 + (end_x - start_x_0) // args.n * args.id
-            end_x = start_x_0 + (end_x - start_x_0) // args.n * (args.id + 1)
-            start_y = 5600
-            end_y = 8160
-        else:
-            start_x = 40600
+    #print(args.country)
+    if 1: #not args.debug:
+        if country == "France":  # -5.3 x 10, 41 x 51.5 => in pixels: 42400 - 45600,
+            start_x_0 = 41960
+            end_x =  45640  # difference 40*92
+            start_y_0 = 5720
+            end_y = 8120  # difference 40*60
+        elif country == "Spain":
+            start_x_0 = 40880
+            end_x = 44400  # difference 40*88
+            start_y_0 = 7480
+            end_y = 9720  # difference 40*56
+        elif country == "Spain_islands":
+            start_x_0 = 38780
+            end_x = 40060  # difference 40*32
+            start_y_0 = 10880
+            end_y = 11360  # difference 40*12
+        elif country == "UK":
+            start_x_0 = 41120
+            end_x = 43680  # difference 40*64
+            start_y_0 = 3360
+            end_y = 6080  # difference 40*68
+        elif country == "Germany":
+            start_x_0 = 44600
+            end_x = 46840 # difference 40*64
+            start_y_0 = 3360
+            end_y = 6080  # difference 40*68
+        elif country == "Italy":
+            start_x_0 = 44790
+            end_x = 47670  # difference 40*72
+            start_y_0 = 6640
+            end_y = 9520  # difference 40*72
+        elif country == "whole":
+            start_x_0 = 40600
             end_x = 53000
-            start_y = 0
+            start_y_0 = 0
             end_y = 10800
+        else:
+            raise NotImplementedError
+
     else:
-        start_x = 48000
-        end_x = 48500
-        start_y = 6000
-        end_y = 6500
+        start_x_0 = 48000
+        end_x = 48520
+        start_y_0 = 6000
+        end_y = 6520
+    # (end_x - start_x_0) // args.n should be divided by pixel_sizes[0]
+    start_x = start_x_0 + (end_x - start_x_0) // args.n * args.id_x
+    end_x = start_x_0 + (end_x - start_x_0) // args.n * (args.id_x + 1)
+    # (end_y - start_y_0) // args.n should be divided by pixel_sizes[0]
+    start_y = start_y_0 + (end_y - start_y_0) // args.m * args.id_y
+    end_y = start_y_0 + (end_y - start_y_0) // args.m * (args.id_y + 1)
 
     #  set logging level
     if args.debug:
         logging.basicConfig(format='%(message)s',
-                            level=logging.DEBUG)  # choose between WARNING - INFO - DEBUG
+                            level=logging.WARNING)  # choose between WARNING - INFO - DEBUG
     else:
         logging.basicConfig(format='%(message)s',
                             level=logging.WARNING)# DEBUG)
@@ -313,33 +355,37 @@ def main(args):
     ##############################################################
     start = time.time()
     #LOG.info("Size of initial raster {} x {}".format(band.XSize, band.YSize))
-    if rewrite_result:
+    #print(args.rewrite_result)
+    #print(f"{args.n} {args.m} {args.id_x} {args.id_y} ")
+    if 0: #args.rewrite_result:  # args.rewrite_result:
         if os.path.exists(result_name):
             os.remove(result_name)
         with open(result_name, "w+", newline='') as file:
             filewriter = csv.writer(file, delimiter=",")
             filewriter.writerow(result_header)
     count = 0
-    #result_buffer = []
 
     # Create a reference to the QgsApplication.  Setting the second argument to False disables the GUI.
     qgs = QgsApplication([], False)
     # Load providers
     qgs.initQgis()
     Processing.initialize()
-    #ds = gdal.Open(str(raster_file))
+    # ds = gdal.Open(str(raster_file))
     metric = QgsDistanceArea()
     metric.setEllipsoid('WGS84')
+
     global_count = 0
     #  iterate over pixels in rectangular zone of input raster
     times = [time.time()]
     for i in range(start_x, end_x, pixel_sizes[0]):
         # get empty directory for vectorized pixels
-        if remove_all:
-            shutil.rmtree(str(temp), ignore_errors=True)
-        if not os.path.exists(temp):
-            os.makedirs(temp, exist_ok=True)
+        #if remove_all:
+        #    shutil.rmtree(str(temp), ignore_errors=True)
+        #if not os.path.exists(temp):
+        #    os.makedirs(temp, exist_ok=True)
+        temp = None
         for j in range(start_y, end_y, pixel_sizes[0]):
+
             global_count = get_intersect_ids_and_areas(i, j, raster_file, tiles, temp, result_name, global_count,
                                         tile_size_x=pixel_sizes[0], tile_size_y=pixel_sizes[0],
                                         metric=metric,
@@ -356,13 +402,13 @@ def main(args):
                   f"processed pixels: {count * pixel_sizes[0] ** 2 // 10 ** 6} M {count * pixel_sizes[0] ** 2 % 10 ** 6 // 10 ** 3} K")
 
             QgsProject.instance().removeAllMapLayers()
-            if remove_all:
-                shutil.rmtree(temp, ignore_errors=True)
+            #if remove_all:
+            #    shutil.rmtree(temp, ignore_errors=True)
     # Finally, exitQgis() is called to remove the provider and layer registries from memory
     qgs.exit()
-
     end = time.time()
     print("Elapsed time {} minutes".format((end - start) / 60.0))
+    return 0
 
 
 if __name__ == '__main__':
