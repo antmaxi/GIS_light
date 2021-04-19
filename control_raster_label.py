@@ -39,7 +39,7 @@ def main(args):
         for j in range(num_x_tiles*args.id_x_curr, num_x_tiles*(args.id_x_curr+1), ):
             #if (i > 17) or (i == 17) and (j >= 36):
             print(f"Started {i} {j} of {args.m} {args.n_all}, "
-                  f"done from {num_x_tiles*args.m * 1600 // 1000} K "
+                  f"done from {num_x_tiles*args.m * 1600 // 1000} K -- "
                   f"{(i*num_x_tiles + j - num_x_tiles*args.id_x_curr) * 1600 // 1000} K")
             try:
                 subprocess.run([path, code_name,

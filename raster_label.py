@@ -301,15 +301,15 @@ def main(args):
             start_y_0 = 10880
             end_y = 11360  # difference 40*12
         elif country == "UK":
-            start_x_0 = 41120
-            end_x = 43680  # difference 40*64
+            start_x_0 = 41100
+            end_x = 43660  # difference 40*64
             start_y_0 = 3360
             end_y = 6080  # difference 40*68
         elif country == "Germany":
             start_x_0 = 44600
-            end_x = 46840 # difference 40*64
-            start_y_0 = 3360
-            end_y = 6080  # difference 40*68
+            end_x = 46840 # difference 40*56
+            start_y_0 = 4760
+            end_y = 6680  # difference 40*68
         elif country == "Italy":
             start_x_0 = 44790
             end_x = 47670  # difference 40*72
