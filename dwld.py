@@ -9,11 +9,27 @@ import argparse
 import shutil
 import concurrent.futures
 
-# import pandas as pd
-
 from bs4 import BeautifulSoup
 
+# arguments
 parser = argparse.ArgumentParser()
+parser.add_argument('--root', type=str, help='password to https://eogdata.mines.edu/nighttime_light',
+                    default="/home/anton/COVID19_Remote")
+parser.add_argument('--data_type', type=str, choices=("monthly", "nightly"), help='type of data to download',
+                    default="nightly" )
+parser.add_argument('--sub_type', type=str, choices=("cloud_cover", "rade9d", None), help='subtype of data to download',
+                    default="rade9d")
+parser.add_argument('--time_min', type=str, help='start date of files to download', default="20180101")
+parser.add_argument('--time_max', type=str, help='end date of files to download (included)',
+                    default=datetime.datetime.today().strftime('%Y%m%d'))
+parser.add_argument('--user', type=str, help='username for https://eogdata.mines.edu/nighttime_light',
+                    default="")
+parser.add_argument('--pwd', type=str, help='password to https://eogdata.mines.edu/nighttime_light',
+                    default="")
+parser.add_argument('--workers', type=int, help='how many processes/threads to use',
+                    default="4")
+parser.add_argument('--parall_type', type=str, choices=("process", "thread"), help='use processes/threads',
+                    default="thread")
 
 
 def get_token(username, password):
@@ -63,7 +79,7 @@ def get_all_links(data_type, data_url, headers, session, links_all):
     # print(links)
     for l in links:
         if l[0:5] != "SVDNB":
-            if l[0:2] == "20" and l[2:4] >= "18" or l[0:2] != "20":
+            if l[0:2] == "20" and l[2:4] >= "18" or l[0:2] != "20":  # change filter if needed
                 get_all_links(data_type, data_url + "/" + l, headers, session, links_all)
         else:
             if data_type == "nightly" or data_type == "monthly" and "75N060W" in l:
@@ -108,46 +124,45 @@ def download_url(url, save_path_2_level, session, headers, check_size=False):
 
 
 def main(args):
-    username = "antonma@student.ethz.ch"
-    password = "EJXYY8tmDC6crMw"
-    root_path = "/home/anton/COVID19_Remote" # "/media/anton/Transcend/COVID19_Remote"  #
-    data_type = "nightly"  # "monthly" #
-    sub_type =  "rade9d" # "cloud_cover"  #
-    max_workers = 4 # None
+    # TODO: get from config file
+    if args.user is None:
+        args.user = "antonma@student.ethz.ch"
+    if args.pwd is None:
+        args.pwd = "EJXYY8tmDC6crMw"
 
-    if data_type == "monthly":
-        sub_type = "v10"
+    if args.data_type == "monthly":
+        args.sub_type = "v10"
 
-    data_url = "https://eogdata.mines.edu/nighttime_light/" + data_type + "/" + sub_type
+    data_url = "https://eogdata.mines.edu/nighttime_light/" + args.data_type + "/" + args.sub_type
 
-    if sub_type == "cloud_cover":
-        time_min = "20180125"  # "20180101"
-    elif sub_type == "rade9d":
-        time_min = "20180416"
-    else:
-        time_min = "20180112"
     time_max = datetime.datetime.today().strftime('%Y%m%d')
 
     start = time.time()
 
     # Submit request with token bearer
-    access_token = load_token(os.path.join(root_path, "token.dat"), username=username, password=password)
+    access_token = load_token(os.path.join(args.root, "token.dat"), username=args.user, password=args.pwd)
     auth = 'Bearer ' + access_token
     headers = {'Authorization': auth}
 
     # get all the downloadable links from subdirectories of data_url
     session = requests.Session()
-    links = get_all_links(data_type, data_url, headers, session, [])
+    links = get_all_links(args.data_type, data_url, headers, session, [])
 
     # extract times and filter
     times = [re.findall(r'\d+', l.split("/")[-1])[0] for l in links]
-    links_dwn = [l for i, l in enumerate(links) if times[i] >= time_min and times[i] <= time_max]
+    links_dwn = [l for i, l in enumerate(links) if args.time_min <= times[i] <= args.time_max]
     #links_dwn = links_dwn[0:5]
     print('Overall files: {}, to download {}'.format(len(links), len(links_dwn)))
 
-    save_path_2_level = os.path.join(root_path, "01_raw_data", data_type)
+    save_path_2_level = os.path.join(args.root, "01_raw_data", args.data_type)
     # Download/check urls in parallel with threads
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+    if args.parall_type == "process":
+        ParallelExecutor = concurrent.futures.ProcessPoolExecutor(max_workers=args.workers)
+    elif args.parall_type == "thread":
+        ParallelExecutor = concurrent.futures.ThreadPoolExecutor(max_workers=args.workers)
+    else:
+        NotImplementedError
+    with ParallelExecutor as executor:
         future_to_url = {executor.submit(download_url, url, save_path_2_level, session, headers, check_size=True):
                              url for url in links_dwn}
         for future in concurrent.futures.as_completed(future_to_url):
