@@ -68,7 +68,7 @@ def delete_layers():
 
 def create_pixel_area(i, j, tile_size_x, tile_size_y, get_area_only=False, metric=None,
                       step=0.004166666700000000098, x0=-180.0020833333499866, y0=75.0020833333500008):
-
+    # parameters of the raster layer
     x2 = 180.0020862133499975
     y2 =  -65.0020844533500082
     x_size = 86401
@@ -85,7 +85,7 @@ def create_pixel_area(i, j, tile_size_x, tile_size_y, get_area_only=False, metri
         return metric.convertAreaMeasurement(metric.measureArea(feat.geometry()), QgsUnitTypes.AreaSquareKilometers)
         #QgsProject.instance().removeMapLayer(layer.id())
     else:
-        layer = QgsVectorLayer('Polygon?crs=epsg:4326', 'polygon' , 'memory')
+        layer = QgsVectorLayer('Polygon?crs=epsg:4326', 'polygon' , 'memory')  # TODO: crs as parameter
         prov = layer.dataProvider()
         prov.addFeatures([feat])
         layer.updateExtents()
@@ -269,7 +269,7 @@ def main(args):
 
     remove_all = False
 
-    country = args.country #"France"
+    country = args.country  #"France"
     if country:
         tiles = os.path.join(folder, "tiles", args.tilename + ".shp")
     else:

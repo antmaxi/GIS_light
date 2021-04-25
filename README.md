@@ -47,3 +47,20 @@ all its pixels are labeled correspondingly
 For example to run:
 
 `python merge_csv.py --country Spain` or `python merge_csv.py --pattern results/pixel_intersections_Fr*.csv`
+
+### Distances between pixel and area
+
+Using QGIS plugin [NNJoin](http://arken.nmbu.no/~havatv/gis/qgisplugins/NNJoin/), 
+which finds the Cartesian distance from pixel to the closest tile from the set of tiles
+(e.g. municipalities under lockdown)
+
+TODO: 
+
+1) select municipalities by NUTS and/or COMM_ID, which should be taken/disregarded
+2) for optimization maybe take not all the pixels in the area, but
+   1) only which were already labeled
+   2) which are not too far from the extents of the lockdown area 
+      (e.g. circumscribe around it and check only inside it). 
+      Now it can process around 5 pixels/s, which is not much.
+      Esp. taking into account that we will have to do it several times for different
+      lockdown areas
