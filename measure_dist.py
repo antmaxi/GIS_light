@@ -13,6 +13,8 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--debug', type=bool, help='to run in debug (small) mode or not', default=False)
+parser.add_argument('--save_layer', type=str, help='to save the created layer or not', default=False)
+parser.add_argument('--save_name', type=str, help='name to save', default="point.sh")
 import concurrent.futures
 
 import gc
@@ -51,7 +53,7 @@ import processing
 
 def create_pixel_area(i, j, geom_type="polygon", tile_size_x=1, tile_size_y=1,
                       crs_source_name="epsg:4326", transform=False, crs_dest_name="epsg:6933",
-                      get_area_only=False, metric=None,
+                      get_area_only=False, metric=None, save_layer=False, save_name="layer.sh",
                       step=0.004166666700000000098, x0=-180.0020833333499866, y0=75.0020833333500008):
     # parameters of the raster layer
     x2 = 180.0020862133499975
@@ -93,6 +95,14 @@ def create_pixel_area(i, j, geom_type="polygon", tile_size_x=1, tile_size_y=1,
     prov.addFeatures([feat])
     layer.updateExtents()
     QgsProject.instance().addMapLayers([layer])
+    if save_layer:
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.driverName = "ESRI Shapefile"
+        if args.save_point:
+            error = QgsVectorFileWriter.writeAsVectorFormatV2(target_layer, os.path.join(os.cwd(), args.save_name),
+                                                              QgsCoordinateTransformContext(), options, )
+            print(error)
+
     return layer
 
 
@@ -118,7 +128,7 @@ def main(args):
         qgis_path = "/home/anton/anaconda3/envs/arcgis/bin/qgis"
         assert "Not Windows or Linux, not guaranteed to work"
 
-    folder = os.path.join(os.getcwd(), "pixel")
+    folder = os.getcwd() # os.path.join(os.getcwd(), "pixel")
 
     #  set logging level
     if args.debug:
@@ -159,57 +169,62 @@ def main(args):
     crs_name = crs.authid()
     crs_name = "epsg:4326"
     crs_name = "epsg:6933"
-    nuts = "ES1"
-    expr = "\"NUTS_CODE\" LIKE " + "'%" + nuts + "%'"
+    nuts_yes = ["ES11","ES12"]
+    nuts_no = ["ES112",]
+    comm_yes = ["ES7115902",]
+    comm_no = []
+
+    # construct QGIS SQL-like expression to choose tiles
+    expr = ""
+    att_name = "NUTS_CODE"
+    expr = " AND ".join(map(lambda x: "\"" + att_name + "\" LIKE '%" + x + "%'", nuts_yes))
+    if expr and nuts_no:
+        expr += " AND "
+        expr += " AND ".join(map(lambda x: "\"" + att_name + "\" NOT LIKE '%" + x + "%'", nuts_no))
+    att_name = "COMM_ID"
+    if expr and (comm_yes or comm_no):
+        expr += " OR "
+    expr += " AND ".join(map(lambda x: "\"" + att_name + "\" = '" + x + "'", comm_yes))
+    if expr and comm_no:
+        expr += " AND ".join(map(lambda x: "\"" + att_name + "\" <> '" + x + "'", comm_no))
     print(expr)
-    # TODO: select tiles by NUTS/COMM_ID
-    #tiles_layer = iface.activeLayer()
-    #QgsFeatureRequest
-    # selected_tiles = tiles_layer.getFeatures(QgsFeatureRequest().setFilterExpression(expr))
-    # geom_type = "multipolygon"
-    # layer_type = geom_type + '?crs=' + crs_name
-    #
-    # layer = QgsVectorLayer(layer_type, geom_type, 'memory')
-    # prov = layer.dataProvider()
-    # prov.addFeatures([selected_tiles])
-    # layer.updateExtents()
-    # QgsProject.instance().addMapLayers([layer])
-    #selected_tiles = tiles_layer.selectByExpression(expr)["OUTPUT"]
-    selected_tiles = r"C:\Users\antonma\RA\sp1.shp"
-    # print(layer)
-    # print(selected_tiles)
+
+    # select tiles by NUTS/COMM_ID
+    selected_tiles = tiles_layer.getFeatures(QgsFeatureRequest().setFilterExpression(expr))
+    # save selected tiles to the new layer
+    geom_type = "multipolygon"
+    layer_type = geom_type + '?crs=' + crs_name
+    layer = QgsVectorLayer(layer_type, geom_type, 'memory')
+    prov = layer.dataProvider()
+    for feat in selected_tiles:
+        prov.addFeatures([feat])
+        print(feat["NUTS_CODE"])
+        print(feat["COMM_ID"])
+    layer.updateExtents()
+    QgsProject.instance().addMapLayers([layer])
+
     dis = []
     times = [time.time(),]
     a = 41500
-    k = 1
+    k = 100
+    j = 8000
     for i in range(a, a+k):
-        target_layer = create_pixel_area(i, 8000, geom_type="point", transform=True,)
-        options = QgsVectorFileWriter.SaveVectorOptions()
-        options.driverName = "ESRI Shapefile"
-        error = QgsVectorFileWriter.writeAsVectorFormatV2(target_layer, r"C:\Users\antonma\RA\sp_pixe9",
-                                                  QgsCoordinateTransformContext(), options,)
-        print(error)
-        print(target_layer)
+        target_layer = create_pixel_area(i, j, geom_type="point", transform=True,
+                                         save_layer=args.save_layer, save_name=args.save_name,)
+        #print(target_layer)
         params = {  'DISCARD_NONMATCHING' : False,
                     'FIELDS_TO_COPY' : [],
                     'INPUT' : target_layer,  # pixel
-                    'INPUT_2' : selected_tiles,
+                    'INPUT_2' : layer,
                     'MAX_DISTANCE' : None, 'NEIGHBORS' : 1, 'OUTPUT' : 'TEMPORARY_OUTPUT', 'PREFIX' : '' }
 
         tiles_joined = processing.run('native:joinbynearest', params,
                        )["OUTPUT"]
         for feature in tiles_joined.getFeatures():
             dis.append(feature["distance"])
-    print(time.time()-times[0])
-    print(dis)
-    # for i in range(20):
-    #     for j in range(1000):
-    #         area = create_pixel_area(i,i,1,1, get_area_only=False, metric=metric)
-    #     #print(area)
-    #     ts.append(time.time())
-    #     print(ts[-1] - ts[-2])
-    path =  ".\playground\saved.shp"
-    #QgsVectorFileWriter.writeAsVectorFormat(layer, path, "UTF-8", layer.crs(), 'ESRI Shapefile')
+        row = [i, j, "{:.4f}".format(feature["distance"])]
+    print(f"{time.time()-times[0]} s")
+    print(f"{dis} m")
     # Finally, exitQgis() is called to remove the provider and layer registries from memory
     qgs.exit()
 
