@@ -16,8 +16,10 @@ For example to run:
 
 Data description https://eogdata.mines.edu/products/vnl/
 
-### Pixel labeling
-`control_raster_label.py` —  to run in batches `raster_label.py` - labeling of raster pixels according 
+### Pixel processing
+`qgis_utils.py` — useful functions to work with QGIS layers
+
+`control_raster_process.py` —  to run in batches `raster_label.py` or `measure_dist.py` - labeling of raster pixels according 
 to the municipalities they intersect and getting these areas
 
 Needs: installed and configured QGIS
@@ -25,8 +27,7 @@ Needs: installed and configured QGIS
 Usage:
 For example to run (for `--id_x_curr` from `0` to `3`):
 
-`python control_raster_label.py --python control_raster_label.py -n 4 
---n_all 88 -m 56 --tilename Spain --country Spain --id_x_curr 0 `
+`python control_raster_process --name Spain --country Spain --id_x_curr 0 `
 
 Optimizations:
 1) hierarchical labeling: starting from big areas, e.g. 40x40 pixels, if the whole area is inside one tile, 

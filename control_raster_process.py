@@ -17,6 +17,7 @@ parser.add_argument('--rewrite_result', type=bool,
                     help='whether to rewrite or rather append the resulting csv/xlsx file', default=False)
 parser.add_argument('--result_name', type=str, help='name of the file with tiles', default="pixel")
 parser.add_argument('--country', type=str, help='name of the country to process', default=None)
+parser.add_argument('--lockdown_file', type=str, help='from which .csv take dates and nuts/comm_id', default=None)
 
 def main(args):
     # set up paths and names
@@ -27,13 +28,19 @@ def main(args):
     result_name = os.path.join(folder,
                                "_".join([args.result_name, args.alg_type, str(args.country),
                                                  (str(args.id_x_curr) + ".csv")]))
-    tilename = str(args.tilename) + str(args.id_x_curr)
+    if args.tilename == "None":
+        tilename = "None"
+    elif args.id_x_curr == -1:
+        tilename = str(args.tilename)
+    else:
+        tilename =  str(args.tilename) + str(args.id_x_curr)  # "COMM_RG_01M_2016_4326"
+
     if args.alg_type == "label":
         code_name = "raster_label.py"
         result_header = ['X', 'Y', 'NUTS_CODE', 'COMM_ID', 'AREA', 'AREA_PERCENT']
     elif args.alg_type == "dist":
         code_name = "measure_dist.py"
-        result_header = ['X', 'Y', 'DISTANCE', 'CLOSEST_COMM_ID',]  # TODO add smth else
+        result_header = ['X', 'Y', 'DISTANCE', 'CLOSEST_COMM_ID',]  # TODO add smth else, implement COMM_ID in measure file
     else:
         raise NotImplementedError(f"Not known algorithm type {args.alg_type}")
 
@@ -47,27 +54,19 @@ def main(args):
         filewriter.writerow(result_header)
     with open(log_file, 'w+') as f:
         pass
-
-    for i in range(args.m):
-        num_x_tiles = args.n_all // args.n
-        for j in range(num_x_tiles*args.id_x_curr, num_x_tiles*(args.id_x_curr+1), ):
-            if args.alg_type == "label":
-                #if (i > 17) or (i == 17) and (j >= 36):
-                print(f"Started {i} {j} of {args.m} {args.n_all}, "
-                      f"done from {num_x_tiles*args.m * 1600 // 1000} K -- "
-                      f"{(i*num_x_tiles + j - num_x_tiles*args.id_x_curr) * 1600 // 1000} K")
-                command = [path_python, code_name,
-                                 "-n", str(args.n_all),  # overall x-tiles, e.g. 60
-                                 "-m", str(args.m),  # overall x-tiles, e.g. 64
-                                 "--id_x", str(j),  # current x-tile
-                                 "--id_y", str(i),  # current y-tile
-                                 #"--rewrite_result", str(rewrite),
-                                 "--tilename", tilename,# + str(args.id_x_curr),
-                                 "--result_name", result_name,
-                                 "--debug", str(args.debug),
-                                 "--country", str(args.country)]
-            elif args.alg_type == "dist":
-                command = [path_python, code_name, ]  # TODO add parameters
+    if 1:
+        #args.country = "France"
+        for i, j in ((20,28),(20,27)):#((8, 20),):#(8,21), (11,70), (11,71), (4,45), (5, 45), (7, 45)):
+            command = [path_python, code_name,
+                       "-n", str(args.n_all),  # overall x-tiles, e.g. 60
+                       "-m", str(args.m),  # overall x-tiles, e.g. 64
+                       "--id_x", str(j),  # current x-tile
+                       "--id_y", str(i),  # current y-tile
+                       # "--rewrite_result", str(rewrite),
+                       "--tilename", tilename,  # + str(args.id_x_curr),
+                       "--result_name", result_name,
+                       "--debug", str(args.debug),
+                       "--country", str(args.country)]
             try:
                 out = subprocess.run(command, capture_output=True)  # TODO: possibility to kill everything with Ctrl+C
                 print(out.stdout.decode('ascii'))  # TODO: stdout and stderr to some file too, for later check
@@ -76,12 +75,57 @@ def main(args):
                         f.write(f"{i} {j}\n")
                         f.write(out.stderr.decode('ascii'))
                         print(f"ERROR with {i} {j}")
+                        print(out.stderr)
             except:
                 with open(log_file, 'a+') as f:
                     f.write(f"{i} {j}\n")
                 print("EXCEPTION")
-            #print(res)
-            #assert 0 == 0
+                print(out.stderr)
+    else:
+        for i in range(args.m):
+            num_x_tiles = args.n_all // args.n
+            for j in range(num_x_tiles*args.id_x_curr, num_x_tiles*(args.id_x_curr+1), ):
+                if args.alg_type == "label":
+                    #if (i > 17) or (i == 17) and (j >= 36):
+                    print(f"Started {i} {j} of {args.m} {args.n_all}, "
+                          f"done from {num_x_tiles*args.m * 1600 // 1000} K -- "
+                          f"{(i*num_x_tiles + j - num_x_tiles*args.id_x_curr) * 1600 // 1000} K")
+                    command = [path_python, code_name,
+                                     "-n", str(args.n_all),  # overall x-tiles, e.g. 60
+                                     "-m", str(args.m),  # overall x-tiles, e.g. 64
+                                     "--id_x", str(j),  # current x-tile
+                                     "--id_y", str(i),  # current y-tile
+                                     #"--rewrite_result", str(rewrite),
+                                     "--tilename", tilename,# + str(args.id_x_curr),
+                                     "--result_name", result_name,
+                                     "--debug", str(args.debug),
+                                     "--country", str(args.country)]
+                elif args.alg_type == "dist":
+                    command = [path_python, code_name,
+                               "-n", str(args.n_all),  # overall x-tiles, e.g. 60
+                               "-m", str(args.m),  # overall x-tiles, e.g. 64
+                               "--id_x", str(j),  # current x-tile
+                               "--id_y", str(i),  # current y-tile
+                               # "--rewrite_result", str(rewrite),
+                               "--tilename", tilename,  # + str(args.id_x_curr),
+                               "--result_name", result_name,
+                               "--debug", str(args.debug),
+                               "--country", str(args.country),
+                               "--lockdown_file", str(args.lockdown_file)]
+                try:
+                    out = subprocess.run(command, capture_output=True)  # TODO: possibility to kill everything with Ctrl+C
+                    print(out.stdout.decode('ascii'))  # TODO: stdout and stderr to some file too, for later check
+                    if out.returncode != 0:
+                        with open(log_file, 'a+') as f:
+                            f.write(f"{i} {j}\n")
+                            f.write(out.stderr.decode('ascii'))
+                            print(f"ERROR with {i} {j}")
+                except:
+                    with open(log_file, 'a+') as f:
+                        f.write(f"{i} {j}\n")
+                    print("EXCEPTION")
+                #print(res)
+                #assert 0 == 0
 
 
 
