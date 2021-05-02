@@ -131,7 +131,6 @@ def main(args):
                           f"country {args.country},",
                           f"done from {total_pixels // 1000} K -- "
                           f"{(k1 * x_times + k2) * pixel_sizes[0]**2 // 1000} K")
-                    print(f"init {args.debug}")
                     command = [path_python, code_name,
                                      "--x0", str(i),
                                      "--y0", str(j),
