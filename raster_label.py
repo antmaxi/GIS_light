@@ -14,7 +14,7 @@ parser.add_argument('-n', type=int,  help='number of programs to run in parallel
 parser.add_argument('-m', type=int,  help='number of subprograms to run consequently, divide y-axis', default=1)
 parser.add_argument('--id_x', type=int,  help='id of the program run on x-axis', default=0)
 parser.add_argument('--id_y', type=int,  help='id of the program run on y-axis', default=0)
-parser.add_argument('--debug', type=bool, help='to run in debug (small) mode or not', default=False)
+parser.add_argument('--debug', type=str, help='to run in debug (small) mode or not', default="False")
 parser.add_argument('--rewrite_result', type=bool,
                     help='whether to rewrite or rather append the resulting csv/xlsx file', default=False)
 parser.add_argument('--tilename', type=str, help='name of the file with tiles to get from',
@@ -108,7 +108,8 @@ def main(args):
         (start_x, end_x, start_y, end_y) = (args.x0, args.x1, args.y0, args.y1)
 
     #  set logging level
-    if args.debug:
+    if args.debug == "True":
+        print("Debug")
         logging.basicConfig(format='%(message)s',
                             level=logging.DEBUG
                             )# choose between WARNING - INFO - DEBUG

@@ -14,7 +14,7 @@ parser.add_argument('-n', type=int,  help='number of programs to run in parallel
 parser.add_argument('-m', type=int,  help='number of subprograms to run consequently, divide y-axis', default=1)
 parser.add_argument('--id_x', type=int,  help='id of the program run on x-axis', default=0)
 parser.add_argument('--id_y', type=int,  help='id of the program run on y-axis', default=0)
-parser.add_argument('--debug', type=bool, help='to run in debug (small) mode or not', default=False)
+parser.add_argument('--debug', type=str, help='to run in debug (small) mode or not', default="False")
 parser.add_argument('--tilename', type=str, help='name of the file with tiles to get from',
                     default="COMM_RG_01M_2016_4326_fixed.shp")
 parser.add_argument('--rewrite_result', type=bool,
@@ -63,7 +63,7 @@ def main(args):
         pass
 
     #  set logging level
-    if args.debug:
+    if args.debug == "True":
         logging.basicConfig(format='%(message)s',
                             level=logging.INFO)  # choose between WARNING - INFO - DEBUG
     else:
@@ -75,7 +75,7 @@ def main(args):
     code = args.country #"BE"
     nuts = [code,]
     save_name = os.path.join(folder_tiles, log_string + ".shp")
-    print(save_name)
+    print(f"Save results to {save_name}")
     with QGISContextManager():
         expr = expression_from_nuts_comm(nuts, [], [], [])
         filtered_tiles, extent, _ = layer_from_filtered_tiles(args.tilename, expr=expr,
@@ -125,9 +125,13 @@ def main(args):
             count = 0
             for k1, i in enumerate(range(start_x, end_x, pixel_sizes[0])):
                 for k2, j in enumerate(range(start_y, end_y, pixel_sizes[0])):
+                    #if k2 >= 1:
+                    #   return 0
                     print(f"Started {k1} {k2} of {x_times} {y_times}, "
+                          f"country {args.country},",
                           f"done from {total_pixels // 1000} K -- "
                           f"{(k1 * x_times + k2) * pixel_sizes[0]**2 // 1000} K")
+                    print(f"init {args.debug}")
                     command = [path_python, code_name,
                                      "--x0", str(i),
                                      "--y0", str(j),
