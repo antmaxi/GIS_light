@@ -65,40 +65,50 @@ def main(args):
     comm_yes = []
     comm_no = []
     with QGISContextManager():
+        #pixel_polygon = create_pixel_area(100, 200, tile_size_x=1, tile_size_y=1,
+        #                                  geom_type="polygon", )
         expr = expression_from_nuts_comm(nuts_yes, nuts_no, comm_yes, comm_no)
-        #layer = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr, crs_name="epsg:6933")
-        layer, extent, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr, crs_name="epsg:4326",
-                                          save_flag=True, save_name=save_name, get_extent=True)
-        print(extent)
-        dis = []
-        comm_ids = []
-        times = [time.time(),]
-        a = 41500
-        k = 10
-        j = 8000
-        rows = []
-        if 0:
-            # iterate over pixels and get their distances to the selected tiles
-            for i in range(a, a+k):
-                target_layer = create_pixel_area(i, j, geom_type="point", transform=True,
-                                                 save_layer=args.save_layer, save_name=args.save_name,)
-                #print(target_layer)
-                params = {  'DISCARD_NONMATCHING' : False,
-                            'FIELDS_TO_COPY' : [],  # TODO: add the closest municipality?
-                            'INPUT' : target_layer,  # pixel
-                            'INPUT_2' : layer,
-                            'MAX_DISTANCE' : None, 'NEIGHBORS' : 1, 'OUTPUT' : 'TEMPORARY_OUTPUT', 'PREFIX' : '' }
+        # layer = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr, crs_name="epsg:6933")
+        layer, extents, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr, crs_name="epsg:4326",
+                                                      save_flag=True, save_name=save_name, get_extent=True)
+    if 0:
+        with QGISContextManager():
+            l = load_layer(path_to_tiles_layer)
+            expr = expression_from_nuts_comm(nuts_yes, nuts_no, comm_yes, comm_no)
+            #layer = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr, crs_name="epsg:6933")
+            layer, extents, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr, crs_name="epsg:4326",
+                                              save_flag=True, save_name=save_name, get_extent=True)
+            print(extents)
+            print("ended")
+            dis = []
+            comm_ids = []
+            times = [time.time(),]
+            a = 41500
+            k = 10
+            j = 8000
+            rows = []
+            if 0:
+                # iterate over pixels and get their distances to the selected tiles
+                for i in range(a, a+k):
+                    target_layer = create_pixel_area(i, j, geom_type="point", transform=True,
+                                                     save_layer=args.save_layer, save_name=args.save_name,)
+                    #print(target_layer)
+                    params = {  'DISCARD_NONMATCHING' : False,
+                                'FIELDS_TO_COPY' : [],  # TODO: add the closest municipality?
+                                'INPUT' : target_layer,  # pixel
+                                'INPUT_2' : layer,
+                                'MAX_DISTANCE' : None, 'NEIGHBORS' : 1, 'OUTPUT' : 'TEMPORARY_OUTPUT', 'PREFIX' : '' }
 
-                tiles_joined = processing.run('native:joinbynearest', params,
-                               )["OUTPUT"]
-                for feature in tiles_joined.getFeatures():
-                    dis.append(feature["distance"])
-                    comm_ids.append(feature["COMM_ID"])
-                rows.append([i, j, "{:.4f}".format(feature["distance"])])
-            delete_layers()
-            print(f"{time.time()-times[0]} s")
-            print(f"{dis} m")
-            print(comm_ids)
+                    tiles_joined = processing.run('native:joinbynearest', params,
+                                   )["OUTPUT"]
+                    for feature in tiles_joined.getFeatures():
+                        dis.append(feature["distance"])
+                        comm_ids.append(feature["COMM_ID"])
+                    rows.append([i, j, "{:.4f}".format(feature["distance"])])
+                delete_layers()
+                print(f"{time.time()-times[0]} s")
+                print(f"{dis} m")
+                print(comm_ids)
 
 
 if __name__ == '__main__':
