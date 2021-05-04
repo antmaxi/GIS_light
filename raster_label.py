@@ -143,7 +143,7 @@ def main(args):
                                                    logger=logger,
                                                    )
     end = time.time()
-    print("Elapsed time {} minutes".format((end - start) / 60.0))
+    print(f"Elapsed time {(end - start) / 60.0:.2} minutes")
     return 0
 
 

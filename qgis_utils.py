@@ -74,10 +74,22 @@ class QGISContextManager:
 def load_layer(path_to_tiles_layer, name="tiles",):
     tiles_layer = QgsVectorLayer(path_to_tiles_layer, name, "ogr")
     if not tiles_layer.isValid():
-        print("Layer failed to load!")
+        print(f"Layer {path_to_tiles_layer} failed to load!")
     else:
         QgsProject.instance().addMapLayer(tiles_layer)
     return tiles_layer
+
+
+def save_layer(layer, save_path):
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.driverName = "ESRI Shapefile"
+    error = QgsVectorFileWriter.writeAsVectorFormatV2(layer, save_path,
+                                                      QgsCoordinateTransformContext(), options,
+                                                      # onlySelected=True,
+                                                      )
+    if error[0] != 0:
+        print(f"Error when saving {error}")
+    return error
 
 
 def create_layer_from_geom(geom, layer_type, geom_type):
@@ -123,14 +135,8 @@ def layer_from_filtered_tiles(tiles_layer_name, expr=None, crs_name="epsg:6933",
     # crs_name = crs.authid()
     save_path = None
     if save_name is not None and save_flag:
-        options = QgsVectorFileWriter.SaveVectorOptions()
-        options.driverName = "ESRI Shapefile"
-        error = QgsVectorFileWriter.writeAsVectorFormatV2(layer, os.path.join(os.getcwd(), save_name),
-                                                          QgsCoordinateTransformContext(), options,
-                                                          #onlySelected=True,
-                                                          )
         save_path = os.path.join(os.getcwd(), save_name)
-        print(error)
+        err_save = save_layer(layer, save_path)
     extents = None
     if get_extent:
         ext = layer.extent()
@@ -185,14 +191,10 @@ def create_pixel_area(i, j, geom_type="polygon", # either "polygon" or "point"
         layer_type = geom_type + '?crs=' + crs_source_name
     layer = create_layer_from_geom(geom, layer_type, geom_type)
     if save_layer:
-        options = QgsVectorFileWriter.SaveVectorOptions()
-        options.driverName = "ESRI Shapefile"
         if save_name is None:
             save_name = "_".join(["pixel", str(i), str(j)]) + ".shp"
-        error = QgsVectorFileWriter.writeAsVectorFormatV2(layer, os.path.join(os.getcwd(), save_name),
-                                                          QgsCoordinateTransformContext(), options, )
-        if error[0]:
-            print(error)
+        save_path = os.path.join(os.getcwd(), save_name)
+        err_save = save_layer(layer, save_path)
     return layer
 
 
@@ -202,12 +204,13 @@ def expression_from_nuts_comm(nuts_yes, nuts_no, comm_yes, comm_no):
     expr = " AND ".join(map(lambda x: "\"" + att_name + "\" LIKE '%" + x + "%'", nuts_yes))
     if expr and nuts_no:
         expr += " AND "
+    if nuts_no:
         expr += " AND ".join(map(lambda x: "\"" + att_name + "\" NOT LIKE '%" + x + "%'", nuts_no))
     att_name = "COMM_ID"
     if expr and (comm_yes or comm_no):
         expr += " OR "
     expr += " AND ".join(map(lambda x: "\"" + att_name + "\" = '" + x + "'", comm_yes))
-    if expr and comm_no:
+    if comm_no:
         expr += " AND ".join(map(lambda x: "\"" + att_name + "\" <> '" + x + "'", comm_no))
     return expr
 
@@ -355,3 +358,31 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
             debug_output_with_time("Deleted all layers", ts, logger)
 
         return global_count
+
+
+def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_name=None,):
+    expr_in = expression_from_nuts_comm([code, ], [], [], [])
+    expr_out = expression_from_nuts_comm([], [code, ], [], [])
+    print(expr_out)
+    return 0,0,0
+    layer_country, _, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr_in, crs_name="epsg:4326",
+                                                    #save_flag=True, save_name="1.shp"
+                                                    )
+    layer_outside_country, _, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr_out, crs_name="epsg:4326",
+                                                    #        save_flag=True, save_name="2.shp"
+                                                            )
+    params = {'INPUT': layer_outside_country,
+              'INTERSECT': layer_country,
+              'OUTPUT': 'TEMPORARY_OUTPUT',
+              'PREDICATE': [4]}  # touches
+    tiles_border = \
+        processing.run('qgis:extractbylocation', params,
+                       )["OUTPUT"]
+    for f in tiles_border.getFeatures():
+        print(f)
+    if save_flag:
+        if save_name is None:
+            save_name = "border.shp"
+        save_path = os.path.join(os.getcwd(), save_name)
+        err_save = save_layer(tiles_border, save_path)
+    return tiles_border, save_path, err_save

@@ -14,6 +14,7 @@ parser.add_argument('-n', type=int,  help='number of programs to run in parallel
 parser.add_argument('-m', type=int,  help='number of subprograms to run consequently, divide y-axis', default=1)
 parser.add_argument('--id_x', type=int,  help='id of the program run on x-axis', default=0)
 parser.add_argument('--id_y', type=int,  help='id of the program run on y-axis', default=0)
+# TODO bool doesn't go correctly in run
 parser.add_argument('--debug', type=str, help='to run in debug (small) mode or not', default="False")
 parser.add_argument('--tilename', type=str, help='name of the file with tiles to get from',
                     default="COMM_RG_01M_2016_4326_fixed.shp")
@@ -30,7 +31,7 @@ def main(args):
     path_python = r"C:\ProgramData\Anaconda3\envs\qgis\python.exe"
     folder = os.path.join(os.getcwd(), args.alg_type)
     folder_tiles = os.path.join(os.getcwd(), "pixel", "tiles")
-    args.tilename = os.path.join(folder_tiles, args.tilename)
+    args.tilename = os.path.join(folder_tiles, args.tilename)  # TODO if used simultaneously by several progs?-copy mb?
     log_string = "_".join([args.alg_type, str(args.country), (str(args.id_x) + "_" + str(args.id_y))])
     log_file = os.path.join(folder, "_".join(["log", log_string + ".txt"]))
     result_name = os.path.join(folder, "_".join([args.result_name, log_string + ".csv"]))
@@ -82,6 +83,11 @@ def main(args):
                                                         crs_name="epsg:4326",
                                                         save_flag=True, save_name=save_name, get_extent=True)
     (x0, x1, y0, y1) = get_sizes_in_pixels_from_degrees(extent)
+    if args.country == "FR":
+        x0 = 41000
+        x1 = 46000
+        y0 = 5000
+        y1 = 8500
     if 0:
         for i, j in ((20,28),(20,27)):#((8, 20),):#(8,21), (11,70), (11,71), (4,45), (5, 45), (7, 45)):
             command = [path_python, code_name,
@@ -111,13 +117,14 @@ def main(args):
                 print(out.stderr)
     else:
 
-        start_x = x0 + (x1 - x0) // args.n * args.id_x
-        end_x = x0 + (x1 - x0) // args.n * (args.id_x + 1)
-        start_y = y0 + (y1 - y0) // args.m * args.id_y
-        end_y = y0 + (y1 - y0) // args.m * (args.id_y + 1)
-        total_pixels = (end_x - start_x) * (end_y - start_y)
-        x_times = math.ceil((end_x - start_x) / pixel_sizes[0])
-        y_times = math.ceil((end_y - start_y) / pixel_sizes[0])
+        start_x = x0 + (x1 - x0) * args.id_x // args.n
+        end_x = x0 + (x1 - x0) * (args.id_x + 1) // args.n
+        start_y = y0 + (y1 - y0) * args.id_y // args.m
+        end_y = y0 + (y1 - y0) * (args.id_y + 1) // args.m
+        print(f"x: {start_x} - {end_x}, y: {start_y} - {end_y}")
+        x_times = math.ceil((end_x - start_x) / pixel_sizes[0] // args.n)  #TODO exact calculations
+        y_times = math.ceil((end_y - start_y) / pixel_sizes[0] // args.m)
+        total_pixels = x_times * y_times * pixel_sizes[0] ** 2#(end_x - start_x) * (end_y - start_y)
         if args.alg_type == "label":
             global_count = 0
             #  iterate over pixels in rectangular zone of input raster
@@ -127,10 +134,12 @@ def main(args):
                 for k2, j in enumerate(range(start_y, end_y, pixel_sizes[0])):
                     #if k2 >= 1:
                     #   return 0
+                    done_pixels = (k1 * y_times + k2) * pixel_sizes[0]**2
                     print(f"Started {k1} {k2} of {x_times} {y_times}, "
                           f"country {args.country},",
                           f"done from {total_pixels // 1000} K -- "
-                          f"{(k1 * x_times + k2) * pixel_sizes[0]**2 // 1000} K")
+                          f"{done_pixels // 1000} K",
+                          f"{done_pixels/total_pixels * 100:.2} %")
                     command = [path_python, code_name,
                                      "--x0", str(i),
                                      "--y0", str(j),
