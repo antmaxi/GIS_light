@@ -7,7 +7,7 @@ import sys
 import time
 
 # QGIS imports
-#from osgeo import gdal
+# from osgeo import gdal
 import qgis
 
 from qgis.core import (
@@ -66,12 +66,12 @@ class QGISContextManager:
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         # Finally, exitQgis() is called to remove the provider and layer registries from memory
-        #QgsProject.instance().removeAllMapLayers()
-        #delete_layers()
+        # QgsProject.instance().removeAllMapLayers()
+        # delete_layers()
         self.qgs.exit()
 
 
-def load_layer(path_to_tiles_layer, name="tiles",):
+def load_layer(path_to_tiles_layer, name="tiles", ):
     tiles_layer = QgsVectorLayer(path_to_tiles_layer, name, "ogr")
     if not tiles_layer.isValid():
         print(f"Layer {path_to_tiles_layer} failed to load!")
@@ -80,15 +80,20 @@ def load_layer(path_to_tiles_layer, name="tiles",):
     return tiles_layer
 
 
-def save_layer(layer, save_path):
+def export_layer(layer, save_path=None, save_name=None):
     options = QgsVectorFileWriter.SaveVectorOptions()
     options.driverName = "ESRI Shapefile"
+    if save_path is None:
+        assert save_name is not None, "No info about where to save provided"
+        save_path = os.path.join(os.getcwd(), save_name)
     error = QgsVectorFileWriter.writeAsVectorFormatV2(layer, save_path,
                                                       QgsCoordinateTransformContext(), options,
                                                       # onlySelected=True,
                                                       )
     if error[0] != 0:
         print(f"Error when saving {error}")
+    else:
+        print(f"Saved file {save_path}")
     return error
 
 
@@ -106,11 +111,12 @@ def create_layer_from_geom(geom, layer_type, geom_type):
 
 
 def layer_from_filtered_tiles(tiles_layer_name, expr=None, crs_name="epsg:6933",
-                              save_flag=False, save_name=None, get_extent=False,):
-    tiles_layer = load_layer(tiles_layer_name, name="tiles",)
+                              save_flag=False, save_path=None, save_name=None,
+                              get_extent=False, ):
+    tiles_layer = load_layer(tiles_layer_name, name="tiles", )
     # select tiles by NUTS/COMM_ID
     selected_tiles = tiles_layer.getFeatures(QgsFeatureRequest().setFilterExpression(expr))
-    #print([field.name() for field in tiles_layer.fields()])  # print fields' names
+    # print([field.name() for field in tiles_layer.fields()])  # print fields' names
 
     '''
     save selected tiles to the new layer
@@ -133,20 +139,17 @@ def layer_from_filtered_tiles(tiles_layer_name, expr=None, crs_name="epsg:6933",
     # crs = tiles_layer.crs()
     # logging.info(f"Used CRS: {crs.description()}")
     # crs_name = crs.authid()
-    save_path = None
-    if save_name is not None and save_flag:
-        save_path = os.path.join(os.getcwd(), save_name)
-        err_save = save_layer(layer, save_path)
+    if save_flag:
+        err_save = export_layer(layer, save_path=save_path, save_name=save_name)
     extents = None
     if get_extent:
         ext = layer.extent()
         extents = (ext.xMinimum(), ext.xMaximum(),
-                  ext.yMinimum(), ext.yMaximum())
-    return layer, extents, save_path #{"layer": layer, "extent": extent, "save_path": save_path}
+                   ext.yMinimum(), ext.yMaximum())
+    return layer, extents, save_path  # {"layer": layer, "extent": extent, "save_path": save_path}
 
 
-
-def create_pixel_area(i, j, geom_type="polygon", # either "polygon" or "point"
+def create_pixel_area(i, j, geom_type="polygon",  # either "polygon" or "point"
                       tile_size_x=1, tile_size_y=1,
                       crs_source_name="epsg:4326", transform=False, crs_dest_name="epsg:6933",
                       get_area_only=False, metric=None, save_layer=False, save_name=None,
@@ -154,7 +157,7 @@ def create_pixel_area(i, j, geom_type="polygon", # either "polygon" or "point"
     # TODO change hardcoded sizes (step, x0, y0) to inferred
     # parameters of the raster layer
     x2 = 180.0020862133499975
-    y2 =  -65.0020844533500082
+    y2 = -65.0020844533500082
     x_size = 86401
     y_size = 33601
     if geom_type == "point":
@@ -182,11 +185,12 @@ def create_pixel_area(i, j, geom_type="polygon", # either "polygon" or "point"
                 if metric is None:
                     metric = QgsDistanceArea()
                     metric.setEllipsoid('WGS84')
-                return metric.convertAreaMeasurement(metric.measureArea(feat.geometry()), QgsUnitTypes.AreaSquareKilometers)
+                return metric.convertAreaMeasurement(metric.measureArea(feat.geometry()),
+                                                     QgsUnitTypes.AreaSquareKilometers)
     else:
         raise NotImplementedError(f"Not known type {geom_type}")
     if transform:
-        layer_type = geom_type+'?crs=' + crs_dest_name
+        layer_type = geom_type + '?crs=' + crs_dest_name
     else:
         layer_type = geom_type + '?crs=' + crs_source_name
     layer = create_layer_from_geom(geom, layer_type, geom_type)
@@ -194,30 +198,37 @@ def create_pixel_area(i, j, geom_type="polygon", # either "polygon" or "point"
         if save_name is None:
             save_name = "_".join(["pixel", str(i), str(j)]) + ".shp"
         save_path = os.path.join(os.getcwd(), save_name)
-        err_save = save_layer(layer, save_path)
+        err_save = export_layer(layer, save_path)
     return layer
 
 
-def expression_from_nuts_comm(nuts_yes, nuts_no, comm_yes, comm_no):
+def expression_from_nuts_comm(nuts_yes=[], nuts_no=[], comm_yes=[], comm_no=[], comm_exact_yes=[], comm_exact_no=[]):
     # construct QGIS SQL-like expression to choose tiles
     att_name = "NUTS_CODE"
-    expr = " AND ".join(map(lambda x: "\"" + att_name + "\" LIKE '%" + x + "%'", nuts_yes))
+    expr = " AND ".join(map(lambda x: "\"" + att_name + "\" LIKE '" + x + "%'", nuts_yes))
     if expr and nuts_no:
         expr += " AND "
     if nuts_no:
-        expr += " AND ".join(map(lambda x: "\"" + att_name + "\" NOT LIKE '%" + x + "%'", nuts_no))
+        expr += " AND ".join(map(lambda x: "\"" + att_name + "\" NOT LIKE '" + x + "%'", nuts_no))
     att_name = "COMM_ID"
+    if expr and (comm_yes or comm_no or comm_exact_yes or comm_exact_no):
+        expr += " OR "
+    expr += " AND ".join(map(lambda x: "\"" + att_name + "\" = '" + x + "'", comm_exact_yes))
+    if comm_exact_no:
+        expr += " AND ".join(map(lambda x: "\"" + att_name + "\" <> '" + x + "'", comm_exact_no))
     if expr and (comm_yes or comm_no):
         expr += " OR "
-    expr += " AND ".join(map(lambda x: "\"" + att_name + "\" = '" + x + "'", comm_yes))
+    expr += " AND ".join(map(lambda x: "\"" + att_name + "\" LIKE '" + x + "%'", comm_yes))
+    if expr and comm_no:
+        expr += " AND "
     if comm_no:
-        expr += " AND ".join(map(lambda x: "\"" + att_name + "\" <> '" + x + "'", comm_no))
+        expr += " AND ".join(map(lambda x: "\"" + att_name + "\" NOT LIKE '" + x + "%'", comm_no))
     return expr
 
 
-def get_sizes_in_pixels_from_degrees(extents, # xmin, xmax, ymin, ymax
-                                 biggest_pixel=40, step=0.004166666700000000098,
-                                 x0=-180.0020833333499866, y0=75.0020833333500008):
+def get_sizes_in_pixels_from_degrees(extents,  # xmin, xmax, ymin, ymax
+                                     biggest_pixel=40, step=0.004166666700000000098,
+                                     x0=-180.0020833333499866, y0=75.0020833333500008):
     """
     Conversion from degrees to pixels with some gap to be sure
     """
@@ -252,11 +263,11 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
         For pixels in subarea of raster get IDs of intersecting tiles-municipalities and areas of their intersections
     """
     logger.debug("Processing i={} j={} size={}".format(i, j, tile_size_x))
-    #print("Processing i={} j={} size={}".format(i, j, tile_size_x))
+    # print("Processing i={} j={} size={}".format(i, j, tile_size_x))
     ts = [time.time()]
     # get one square area from raster by its i and j pixel coordinates and sizes
     pixel_polygon = create_pixel_area(i, j, tile_size_x=tile_size_x, tile_size_y=tile_size_y,
-                                      metric=metric, geom_type="polygon",)
+                                      metric=metric, geom_type="polygon", )
 
     debug_output_with_time("Polygonized area", ts, logger)
 
@@ -270,11 +281,11 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
         params = {
             "INPUT": tiles,
             "INTERSECT": pixel_polygon,
-            'OUTPUT': 'memory:buffer', #tiles_intersect,  #
+            'OUTPUT': 'memory:buffer',  # tiles_intersect,  #
             "PREDICATE": [0]
         }
         tiles_intersect = \
-        processing.run('qgis:extractbylocation', params,
+            processing.run('qgis:extractbylocation', params,
                            )["OUTPUT"]
 
         debug_output_with_time("Found intersection tiles", ts, logger)
@@ -297,7 +308,7 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
         # get IDs of intersection tiles
         feature_ids = [feature["COMM_ID"] for feature in layer_intersect.getFeatures()]
         feature_nuts = [feature["NUTS_CODE"] for feature in layer_intersect.getFeatures()]
-        rows = []  #  result accumulation
+        rows = []  # result accumulation
         # if there is some intersection with municipalities' tiles
         if len(feature_ids) > 0:
             # single pixel or aggregation of pixels?
@@ -308,10 +319,10 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
                     for x in range(0, tile_size_x):
                         for y in range(0, tile_size_y):
                             rows.append([i + x, j + y, feature_nuts[0], feature_ids[0],
-                                         "{:.6f}".format(create_pixel_area(i+x, j+y, geom_type="polygon",
+                                         "{:.6f}".format(create_pixel_area(i + x, j + y, geom_type="polygon",
                                                                            tile_size_x=1, tile_size_y=1,
                                                                            get_area_only=True, metric=metric)),
-                                                         100.0])
+                                         100.0])
                     debug_output_with_time(f"Done with area of size {tile_size_x}", ts, logger)
                     global_count += tile_size_x * tile_size_y
                 # if area is divided between municipalities
@@ -324,7 +335,8 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
                             global_count = get_intersect_ids_and_areas(i + k * size, j + m * size,
                                                                        tiles, result_name,
                                                                        global_count,
-                                                                       tile_size_x=size, tile_size_y=size, metric=metric,
+                                                                       tile_size_x=size, tile_size_y=size,
+                                                                       metric=metric,
                                                                        level=level + 1, pixel_sizes=pixel_sizes,
                                                                        check_intersection=True,
                                                                        logger=logger,
@@ -337,7 +349,7 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
                     # get area of intersection in km^2
                     areas.append(
                         metric.convertAreaMeasurement(metric.measureArea(feature.geometry()),
-                                                 QgsUnitTypes.AreaSquareKilometers))
+                                                      QgsUnitTypes.AreaSquareKilometers))
                 for ind in range(k + 1):
                     rows.append([i, j, feature_nuts[ind], feature_ids[ind],
                                  "{:.6f}".format(areas[ind]), "{:.4f}".format((areas[ind] / sum(areas)) * 100.0)])
@@ -350,26 +362,26 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
                     if row:
                         filewriter.writerow(row)
                         logger.debug(row)
-                        #print(row)
+                        # print(row)
             debug_output_with_time("Dumped results", ts, logger)
             # remove loaded layers
-            #delete_layers()
-            #gc.collect()
+            # delete_layers()
+            # gc.collect()
             debug_output_with_time("Deleted all layers", ts, logger)
 
         return global_count
 
 
-def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_name=None,):
-    expr_in = expression_from_nuts_comm([code, ], [], [], [])
-    expr_out = expression_from_nuts_comm([], [code, ], [], [])
-    print(expr_out)
-    return 0,0,0
+def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_path=None, save_name=None, ):
+    expr_in = expression_from_nuts_comm(comm_yes=[code, ])
+    expr_out = expression_from_nuts_comm(comm_no=[code, ])
+    # print(expr_in)
+    # print(expr_out)
     layer_country, _, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr_in, crs_name="epsg:4326",
-                                                    #save_flag=True, save_name="1.shp"
+                                                    # save_flag=True, save_name="1.shp"
                                                     )
     layer_outside_country, _, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr_out, crs_name="epsg:4326",
-                                                    #        save_flag=True, save_name="2.shp"
+                                                            #        save_flag=True, save_name="2.shp"
                                                             )
     params = {'INPUT': layer_outside_country,
               'INTERSECT': layer_country,
@@ -378,11 +390,23 @@ def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_name=
     tiles_border = \
         processing.run('qgis:extractbylocation', params,
                        )["OUTPUT"]
-    for f in tiles_border.getFeatures():
-        print(f)
     if save_flag:
-        if save_name is None:
-            save_name = "border.shp"
-        save_path = os.path.join(os.getcwd(), save_name)
-        err_save = save_layer(tiles_border, save_path)
+        err_save = export_layer(tiles_border, save_path=save_path, save_name=save_name)
     return tiles_border, save_path, err_save
+
+
+def measure_dist(i, j, tiles_layer, dist_type=None, save_point=False, save_name=None):
+    target_layer = create_pixel_area(i, j, geom_type="point", transform=True,
+                                     save_layer=save_point, save_name=save_name, )
+    params = {'DISCARD_NONMATCHING': False,
+              'FIELDS_TO_COPY': [],  # TODO: add the closest municipality?
+              'INPUT': target_layer,  # point
+              'INPUT_2': tiles_layer,  # tiles
+              'MAX_DISTANCE': None, 'NEIGHBORS': 1, 'OUTPUT': 'TEMPORARY_OUTPUT', 'PREFIX': ''}
+
+    tiles_joined = processing.run('native:joinbynearest', params,
+                                  )["OUTPUT"]
+    for feature in tiles_joined.getFeatures():
+        dis = feature["distance"]
+        comm_id = feature["COMM_ID"]
+    return [i, j, "{:.4f}".format(dis), comm_id]

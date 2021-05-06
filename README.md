@@ -36,10 +36,12 @@ all its pixels are labeled correspondingly
 3) splitting of the initial raster area into several ones and possibility of parallel launch
 
 #### Technical info
-1) Tiles are extracted from the general Europe municipalities map by the country NUTS 
-   (`COMM_RG_01M_2016_4326.shp` 
-   from [google-disk](https://drive.google.com/drive/folders/1bJRAxose2mekKBZHRilsgRgMzOK5i6yl?usp=sharing))
-2) The extents of tiles are taken from the properties of corresp. layers (the same link as before) and then the rectangulars 
+1) Tiles are extracted from the general Europe municipalities map by the country name in COMM_ID
+   (as some don't have NUTS, but COMM_ID all have).
+   The file with all municipalities' tiles is `COMM_RG_01M_2016_4326.shp` 
+   on the [google-disk](https://drive.google.com/drive/folders/1bJRAxose2mekKBZHRilsgRgMzOK5i6yl?usp=sharing)
+2) Tiles per-country are extracted automatically
+3) The extents of tiles are taken from the properties of corresp. layers (the same link as before) automatically and then the rectangulars 
    from pixels are circumscribed around them with some gap
    
 ### Labels` processing
@@ -52,13 +54,11 @@ For example to run:
 ### Distances between pixel and area
 
 Using QGIS plugin [NNJoin](http://arken.nmbu.no/~havatv/gis/qgisplugins/NNJoin/), 
-which finds the Cartesian distance from pixel to the closest tile from the set of tiles
-(e.g. municipalities under lockdown)
+which finds the Cartesian distance from pixel's center point to the closest tile from the set of tiles
+(e.g. municipalities under lockdown or neighboring border tiles)
 
-TODO: 
-
-1) select municipalities by NUTS and/or COMM_ID, which should be taken/disregarded
-2) for optimization maybe take not all the pixels in the area, but
+TODO:
+1) for optimization maybe take not all the pixels in the area, but
    1) only which were already labeled
    2) which are not too far from the extents of the lockdown area 
       (e.g. circumscribe around it and check only inside it). 
