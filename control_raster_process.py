@@ -90,20 +90,22 @@ def main(args):
     save_path = os.path.join(folder_tiles, log_string + ".shp")
     print(f"Save results to {save_path}")
     with QGISContextManager():
-        expr = expression_from_nuts_comm(comm_yes=nuts)  # nuts_yes=nuts)
-        print(f"Used expression to select the tiles {expr}")
-
         # get in-country tiles and also direct neighboring tiles
         if args.load_data:
-            path_country = os.path.join(folder_tiles, "label_" + code + "_0_0" + ".shp")  # TODO create files with "_" +
+            path_country = os.path.join(folder_tiles, "label_" + code + "_"
+                                        + str(args.id_x) + "_" + str(args.id_y) + ".shp")  # TODO create files with "_" +
                                                                                           # crs_code +
             path_border = os.path.join(folder_tiles, "border_" + code + "_" + crs_code + ".shp")
+            print(f"Get country tiles from {path_country}")
+            print(f"Get border tiles from {path_border}")
             filtered_tiles = load_layer(path_country)
             ext = filtered_tiles.extent()
             extent = (ext.xMinimum(), ext.xMaximum(),
                       ext.yMinimum(), ext.yMaximum())
             tiles_border = load_layer(path_border)
         else:
+            expr = expression_from_nuts_comm(comm_yes=nuts)  # nuts_yes=nuts)
+            print(f"Used expression to select the tiles {expr}")
             filtered_tiles, extent, _ = layer_from_filtered_tiles(tiles_path, expr=expr,
                                                                   crs_name=crs_name,
                                                                   save_flag=False, save_path=save_path, get_extent=True)
@@ -113,6 +115,7 @@ def main(args):
         # merge country + her neighboring tiles
         tiles_to_label = merge_two_vector_layers(filtered_tiles, tiles_border)
         export_layer(tiles_to_label, save_path=in_border_tiles_path)
+        print(f"Extents of country {extent}")
         # TODO: for further optimization if several programs divide the whole area, take only tiles intersecting with
         #  the current part
     (x0, x1, y0, y1) = get_sizes_in_pixels_from_degrees(extent)
@@ -141,7 +144,7 @@ def main(args):
                 # if k2 >= 1:
                 #   return 0
                 done_pixels = (k1 * y_times + k2) * pixel_sizes[0] ** 2
-                print(f"Started {k1} {k2} of {x_times} {y_times}, "
+                print(f"Started {k1} {k2} of {x_times-1} {y_times-1}, "
                       f"country {args.code},",
                       f"done from {total_pixels // 1000} K -- "
                       f"{done_pixels // 1000} K",

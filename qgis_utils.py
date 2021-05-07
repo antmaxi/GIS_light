@@ -397,7 +397,6 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                     if row:
                         filewriter.writerow(row)
                         logger.debug(row)
-                        print(row)
             debug_output_with_time("Dumped results", ts, logger)
             # remove loaded layers
             # delete_layers()
