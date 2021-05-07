@@ -1,8 +1,10 @@
 import csv
 import gc
+import glob
 import math
 import os
 import platform
+import shutil
 import sys
 import time
 
@@ -71,7 +73,7 @@ class QGISContextManager:
         self.qgs.exit()
 
 
-def load_layer(path_to_tiles_layer, name="tiles", ):
+def load_layer(path_to_tiles_layer, name=None, ):
     tiles_layer = QgsVectorLayer(path_to_tiles_layer, name, "ogr")
     if not tiles_layer.isValid():
         print(f"Layer {path_to_tiles_layer} failed to load!")
@@ -80,21 +82,52 @@ def load_layer(path_to_tiles_layer, name="tiles", ):
     return tiles_layer
 
 
-def export_layer(layer, save_path=None, save_name=None):
-    options = QgsVectorFileWriter.SaveVectorOptions()
-    options.driverName = "ESRI Shapefile"
+def get_save_path(save_path=None, save_name=None):
     if save_path is None:
         assert save_name is not None, "No info about where to save provided"
         save_path = os.path.join(os.getcwd(), save_name)
-    error = QgsVectorFileWriter.writeAsVectorFormatV2(layer, save_path,
-                                                      QgsCoordinateTransformContext(), options,
-                                                      # onlySelected=True,
-                                                      )
-    if error[0] != 0:
-        print(f"Error when saving {error}")
+    return save_path
+
+
+def export_layer(layer, save_path=None, save_name=None, rewrite=True):
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.driverName = "ESRI Shapefile"
+    save_path = get_save_path(save_path=save_path, save_name=save_name)
+    if os.path.exists(save_path) and not rewrite:
+        print(f"File exists {save_path} and not allowed to rewrite by this program")
+        return 1
     else:
-        print(f"Saved file {save_path}")
-    return error
+        file_list = glob.glob(save_path.rstrip(save_path.split(".")[-1]))
+        # Iterate over the list of filepaths & remove each file.
+        for file_path in file_list:
+            try:
+                os.remove(file_path)
+            except:
+                print("Error while deleting file : ", file_path)
+        error = QgsVectorFileWriter.writeAsVectorFormatV2(layer, save_path,
+                                                          QgsCoordinateTransformContext(), options,
+                                                          # onlySelected=True,
+                                                          )
+        if error[0] != 0:
+            print(f"Error when saving {error}")
+        else:
+            print(f"Saved file {save_path}")
+        return error
+
+
+def merge_two_vector_layers(layer, layer_add, save_flag=False, save_path=None, save_name=None):
+    """
+    Add features from layer_add to layer
+    """
+    prov = layer.dataProvider()
+    # add selected features
+    for feat in layer_add.getFeatures():
+        prov.addFeatures([feat])
+    layer.updateExtents()
+    QgsProject.instance().addMapLayers([layer])
+    if save_flag:
+        err_save = export_layer(layer, save_path=save_path, save_name=save_name)
+    return layer
 
 
 def create_layer_from_geom(geom, layer_type, geom_type):
@@ -196,7 +229,7 @@ def create_pixel_area(i, j, geom_type="polygon",  # either "polygon" or "point"
     layer = create_layer_from_geom(geom, layer_type, geom_type)
     if save_layer:
         if save_name is None:
-            save_name = "_".join(["pixel", str(i), str(j)]) + ".shp"
+            save_name = "_".join([geom_type, str(i), str(j)]) + ".shp"
         save_path = os.path.join(os.getcwd(), save_name)
         err_save = export_layer(layer, save_path)
     return layer
@@ -204,6 +237,7 @@ def create_pixel_area(i, j, geom_type="polygon",  # either "polygon" or "point"
 
 def expression_from_nuts_comm(nuts_yes=[], nuts_no=[], comm_yes=[], comm_no=[], comm_exact_yes=[], comm_exact_no=[]):
     # construct QGIS SQL-like expression to choose tiles
+    # TODO rewrite more beautifully
     att_name = "NUTS_CODE"
     expr = " AND ".join(map(lambda x: "\"" + att_name + "\" LIKE '" + x + "%'", nuts_yes))
     if expr and nuts_no:
@@ -254,7 +288,7 @@ def debug_output_with_time(st, ts, logger):
     logger.debug(ts[-1] - ts[-2])
 
 
-def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
+def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                                 tile_size_x=None, tile_size_y=None,
                                 metric=None,
                                 level=None, pixel_sizes=None, check_intersection=True, logger=None,
@@ -313,8 +347,9 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
         if len(feature_ids) > 0:
             # single pixel or aggregation of pixels?
             if tile_size_x != 1:
-                # is the whole area inside one municipality or not
-                if len(feature_ids) == 1:
+                f = feature_ids[0][0:2] == code
+                # is the whole area inside one municipality of our country or not
+                if len(feature_ids) == 1 and f:  # TODO add check that all intersected tiles are of our current code
                     # get area of every pixel inside and append to results
                     for x in range(0, tile_size_x):
                         for y in range(0, tile_size_y):
@@ -333,7 +368,7 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
                         for m in range(n):
                             logger.debug(f"{i} {j} {size} {k} {m}")
                             global_count = get_intersect_ids_and_areas(i + k * size, j + m * size,
-                                                                       tiles, result_name,
+                                                                       tiles, result_name, code,
                                                                        global_count,
                                                                        tile_size_x=size, tile_size_y=size,
                                                                        metric=metric,
@@ -362,7 +397,7 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
                     if row:
                         filewriter.writerow(row)
                         logger.debug(row)
-                        # print(row)
+                        print(row)
             debug_output_with_time("Dumped results", ts, logger)
             # remove loaded layers
             # delete_layers()
@@ -372,15 +407,23 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, global_count,
         return global_count
 
 
-def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_path=None, save_name=None, ):
+def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_path=None, save_name=None,
+                          crs_name="epsg:6933", rewrite=False):
+    if save_flag:
+        save_path = get_save_path(save_path=save_path, save_name=save_name)
+        if os.path.exists(save_path) and not rewrite:
+            print(f"File exists {save_path} and not allowed to rewrite by this program")
+            return 1
     expr_in = expression_from_nuts_comm(comm_yes=[code, ])
     expr_out = expression_from_nuts_comm(comm_no=[code, ])
     # print(expr_in)
     # print(expr_out)
-    layer_country, _, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr_in, crs_name="epsg:4326",
+    layer_country, _, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr_in,
+                                                    crs_name=crs_name,
                                                     # save_flag=True, save_name="1.shp"
                                                     )
-    layer_outside_country, _, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr_out, crs_name="epsg:4326",
+    layer_outside_country, _, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr_out,
+                                                            crs_name=crs_name,
                                                             #        save_flag=True, save_name="2.shp"
                                                             )
     params = {'INPUT': layer_outside_country,
@@ -390,13 +433,15 @@ def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_path=
     tiles_border = \
         processing.run('qgis:extractbylocation', params,
                        )["OUTPUT"]
+    err_save = None
     if save_flag:
-        err_save = export_layer(tiles_border, save_path=save_path, save_name=save_name)
+        err_save = export_layer(tiles_border, save_path=save_path, save_name=save_name, rewrite=rewrite)
     return tiles_border, save_path, err_save
 
 
 def measure_dist(i, j, tiles_layer, dist_type=None, save_point=False, save_name=None):
     target_layer = create_pixel_area(i, j, geom_type="point", transform=True,
+                                     crs_source_name="epsg:4326", crs_dest_name="epsg:6933",
                                      save_layer=save_point, save_name=save_name, )
     params = {'DISCARD_NONMATCHING': False,
               'FIELDS_TO_COPY': [],  # TODO: add the closest municipality?

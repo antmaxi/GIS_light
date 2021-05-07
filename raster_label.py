@@ -17,13 +17,13 @@ parser.add_argument('--id_y', type=int,  help='id of the program run on y-axis',
 parser.add_argument('--debug', type=str, help='to run in debug (small) mode or not', default="False")
 parser.add_argument('--rewrite_result', type=bool,
                     help='whether to rewrite or rather append the resulting csv/xlsx file', default=False)
-parser.add_argument('--tilename', type=str, help='name of the file with tiles to get from',
+parser.add_argument('--tilepath', type=str, help='name of the file with tiles to get from',
                     default="COMM_RG_01M_2016_4326_fixed.shp")
 parser.add_argument('--result_name', type=str, help='name of the file with tiles', default="pixels")
-parser.add_argument('--country', type=str, help='name of the country to process', default=None)
 parser.add_argument('--exact_sizes', type=bool, help='whether input is exact sizes of pixels to process or '
                                                      'it should be calculated',
                     default=None)
+parser.add_argument('--code', type=str, help='name of the country to process', default=None)
 # TODO make argument - list for pixels
 parser.add_argument('--x0', type=int, help='xmin pixel', default=None)
 parser.add_argument('--x1', type=int, help='xmax pixel', default=None)
@@ -71,14 +71,11 @@ def main(args):
     #                    INITIALIZATION
     ##############################################################
     folder = os.path.join(os.getcwd(), "label")
-    folder_tiles = os.path.join(os.getcwd(), "pixel", "tiles")
-    args.tilename = os.path.join(folder_tiles, args.tilename)
-    result_format = "csv"
+    result_format = ".csv"
 
     check_intersection = True
 
     if check_intersection:
-        result_name = args.result_name
         result_header = ['X', 'Y', 'NUTS_CODE', 'COMM_ID', 'AREA', 'AREA_PERCENT']
         pixel_sizes = [
             40,
@@ -86,26 +83,18 @@ def main(args):
             2,
             1]
     else:
-        result_name = os.path.join(folder, "pixel_areas." + result_format)
         result_header = ['X', 'Y', 'AREA']
         pixel_sizes = [1]
 
-    country = args.country
-    if country != "None" and args.tilename != "None":
-        tiles = os.path.join(folder, "tiles", args.tilename + ".shp")
-    else:
-        tiles = os.path.join(folder, "tiles", "COMM_RG_01M_2016_4326.shp")  # map of municipalities
-
-    # get pixels' area which to process now
-    if 0: #not args.exact_sizes:
-        # (end_x - start_x_0) // args.n should be divided by pixel_sizes[0]
-        start_x = start_x_0 + (end_x - start_x_0) // args.n * args.id_x
-        end_x = start_x_0 + (end_x - start_x_0) // args.n * (args.id_x + 1)
-        # (end_y - start_y_0) // args.n should be divided by pixel_sizes[0]
-        start_y = start_y_0 + (end_y - start_y_0) // args.m * args.id_y
-        end_y = start_y_0 + (end_y - start_y_0) // args.m * (args.id_y + 1)
-    else:
-        (start_x, end_x, start_y, end_y) = (args.x0, args.x1, args.y0, args.y1)
+    # if 0: #not args.exact_sizes:
+    #     # (end_x - start_x_0) // args.n should be divided by pixel_sizes[0]
+    #     start_x = start_x_0 + (end_x - start_x_0) // args.n * args.id_x
+    #     end_x = start_x_0 + (end_x - start_x_0) // args.n * (args.id_x + 1)
+    #     # (end_y - start_y_0) // args.n should be divided by pixel_sizes[0]
+    #     start_y = start_y_0 + (end_y - start_y_0) // args.m * args.id_y
+    #     end_y = start_y_0 + (end_y - start_y_0) // args.m * (args.id_y + 1)
+    # else:
+    #     (start_x, end_x, start_y, end_y) = (args.x0, args.x1, args.y0, args.y1)
 
     #  set logging level
     if args.debug == "True":
@@ -132,10 +121,11 @@ def main(args):
         global_count = 0
         #  iterate over pixels in rectangular zone of input raster
         times = [time.time()]
-
         #print(sys.argv)
-        tiles = load_layer(args.tilename)
-        global_count = get_intersect_ids_and_areas(int(args.x0), int(args.y0), tiles, result_name, global_count,
+        tiles = load_layer(args.tilepath)
+        global_count = get_intersect_ids_and_areas(int(args.x0), int(args.y0), tiles,
+                                                   args.result_name, args.code,
+                                                   global_count,
                                                    tile_size_x=pixel_sizes[0],
                                                    tile_size_y=pixel_sizes[0],
                                                    metric=qgis_manager.metric,
