@@ -141,8 +141,6 @@ def main(args):
         count = 0
         for k1, i in enumerate(range(start_x, end_x, pixel_sizes[0])):
             for k2, j in enumerate(range(start_y, end_y, pixel_sizes[0])):
-                # if k2 >= 1:
-                #   return 0
                 done_pixels = (k1 * y_times + k2) * pixel_sizes[0] ** 2
                 print(f"Started {k1} {k2} of {x_times-1} {y_times-1}, "
                       f"country {args.code},",

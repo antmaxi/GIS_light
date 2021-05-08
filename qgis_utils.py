@@ -185,7 +185,7 @@ def layer_from_filtered_tiles(tiles_layer_name, expr=None, crs_name="epsg:6933",
 def create_pixel_area(i, j, geom_type="polygon",  # either "polygon" or "point"
                       tile_size_x=1, tile_size_y=1,
                       crs_source_name="epsg:4326", transform=False, crs_dest_name="epsg:6933",
-                      get_area_only=False, metric=None, save_layer=False, save_name=None,
+                      get_area_only=False, metric=None, save_flag=False, save_name=None,
                       step=0.004166666700000000098, x0=-180.0020833333499866, y0=75.0020833333500008):
     # TODO change hardcoded sizes (step, x0, y0) to inferred
     # parameters of the raster layer
@@ -227,7 +227,7 @@ def create_pixel_area(i, j, geom_type="polygon",  # either "polygon" or "point"
     else:
         layer_type = geom_type + '?crs=' + crs_source_name
     layer = create_layer_from_geom(geom, layer_type, geom_type)
-    if save_layer:
+    if save_flag:
         if save_name is None:
             save_name = "_".join([geom_type, str(i), str(j)]) + ".shp"
         save_path = os.path.join(os.getcwd(), save_name)
@@ -291,6 +291,7 @@ def debug_output_with_time(st, ts, logger):
 def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                                 tile_size_x=None, tile_size_y=None,
                                 metric=None,
+                                eps=0.01/100.0,  # relative error allowed for the check of the whole area in intersect
                                 level=None, pixel_sizes=None, check_intersection=True, logger=None,
                                 path_to_gdal=None):
     """
@@ -335,21 +336,30 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
 
         debug_output_with_time("Intersected tiles with pixel", ts, logger)
 
-        # delete polygonized area layer
-        for l in (pixel_polygon, tiles_intersect):
-            QgsProject.instance().removeMapLayer(l.id())
-
         # get IDs of intersection tiles
         feature_ids = [feature["COMM_ID"] for feature in layer_intersect.getFeatures()]
         feature_nuts = [feature["NUTS_CODE"] for feature in layer_intersect.getFeatures()]
         rows = []  # result accumulation
         # if there is some intersection with municipalities' tiles
         if len(feature_ids) > 0:
+            # get area of (large) pixel
+            area_total = None
+            for ind, elem in enumerate(pixel_polygon.getFeatures()):
+                area_total = metric.convertAreaMeasurement(metric.measureArea(elem.geometry()),
+                                                           QgsUnitTypes.AreaSquareKilometers)
+                assert ind == 0  # only one feature in pixel
             # single pixel or aggregation of pixels?
             if tile_size_x != 1:
+                #delete_layers()
+                # for case of one intersection check that it's of our code
                 f = feature_ids[0][0:2] == code
+                # get area of the first intersection tile
+                area_first = None
+                for k, feature in enumerate(layer_intersect.getFeatures()):
+                    area_first = metric.convertAreaMeasurement(metric.measureArea(feature.geometry()),
+                                                          QgsUnitTypes.AreaSquareKilometers)
                 # is the whole area inside one municipality of our country or not
-                if len(feature_ids) == 1 and f:  # TODO add check that all intersected tiles are of our current code
+                if len(feature_ids) == 1 and f and abs(area_first-area_total)/area_total < eps:
                     # get area of every pixel inside and append to results
                     for x in range(0, tile_size_x):
                         for y in range(0, tile_size_y):
@@ -379,15 +389,23 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
             # single pixel
             else:  # tile_size_x == 1
                 areas = []
-                k = 0
+                ids = []
+                ks = []
+                # account for possible repetitions of the same tile
                 for k, feature in enumerate(layer_intersect.getFeatures()):
-                    # get area of intersection in km^2
-                    areas.append(
-                        metric.convertAreaMeasurement(metric.measureArea(feature.geometry()),
-                                                      QgsUnitTypes.AreaSquareKilometers))
-                for ind in range(k + 1):
-                    rows.append([i, j, feature_nuts[ind], feature_ids[ind],
-                                 "{:.6f}".format(areas[ind]), "{:.4f}".format((areas[ind] / sum(areas)) * 100.0)])
+                    id = feature["COMM_ID"]
+                    if (id not in ids) and (id[0:2] == code):  # check that part is from this country
+                        ids.append(id)
+                        ks.append(k)
+                        # get area of intersection in km^2
+                        areas.append(
+                            metric.convertAreaMeasurement(metric.measureArea(feature.geometry()),
+                                                          QgsUnitTypes.AreaSquareKilometers))
+                # form results
+                for ind in range(len(ids)):
+                    k = ks[ind]
+                    rows.append([i, j, feature_nuts[k], feature_ids[k],
+                                 "{:.6f}".format(areas[ind]), "{:.4f}".format((areas[ind] / area_total) * 100.0)])
                 debug_output_with_time("Calculated area of intersections", ts, logger)
                 global_count += 1
             # dump obtained results
@@ -398,8 +416,9 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                         filewriter.writerow(row)
                         logger.debug(row)
             debug_output_with_time("Dumped results", ts, logger)
+
             # remove loaded layers
-            # delete_layers()
+            #delete_layers()
             # gc.collect()
             debug_output_with_time("Deleted all layers", ts, logger)
 
@@ -438,10 +457,10 @@ def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_path=
     return tiles_border, save_path, err_save
 
 
-def measure_dist(i, j, tiles_layer, dist_type=None, save_point=False, save_name=None):
+def measure_dist(i, j, tiles_layer, dist_type=None, save_flag=False, save_name=None):
     target_layer = create_pixel_area(i, j, geom_type="point", transform=True,
                                      crs_source_name="epsg:4326", crs_dest_name="epsg:6933",
-                                     save_layer=save_point, save_name=save_name, )
+                                     save_flag=save_flag, save_name=save_name, )
     params = {'DISCARD_NONMATCHING': False,
               'FIELDS_TO_COPY': [],  # TODO: add the closest municipality?
               'INPUT': target_layer,  # point

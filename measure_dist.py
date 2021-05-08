@@ -64,17 +64,17 @@ def main(args):
         pass
         # df = pd.read_csv(os.path.join(folder_tiles, "COMM_RG_01M_2016_6933_fixed.shp"))
     save_name = None
-    alg_type = "extract_border"
-    #alg_type = "get_dist_to_border"
+    #alg_type = "extract_border"
+    alg_type = "get_dist_to_border"
     #alg_type = "get_dist_to_lockdown"
 
     codes = [
-         "AT",
+        # "AT",
          "BE",
-         "CH", "CZ", "DK", "IE", "NL", "PL", "PT",
-         "LI", "MC", "SM",
-         "AD",
-         "DE", "FR", "ES", "IT", "UK", "GB"
+         #"CH", "CZ", "DK", "IE", "NL", "PL", "PT",
+         #"LI", "MC", "SM",
+         #"AD",
+         #"DE", "FR", "ES", "IT", "UK", "GB"
     ]
     for code in codes:
         print(f"{time.strftime('%m/%d/%Y, %H:%M:%S', time.localtime())} Started {code}")
@@ -101,8 +101,8 @@ def main(args):
                     # iterate over retrieved pixels and get their distances to the selected tiles
                     for index, row in df.iterrows():
                         i, j = row["X"], row["Y"]
-                        rows.append(measure_dist(i, j, tiles_layer, dist_type="point_to_tiles",
-                                                 save_point=True))
+                        rows.append(measure_dist(i, j, tiles_layer, #dist_type="point_to_tiles",
+                                                 save_flag=False))
                         if index % 1000 == 1:
                             print(f"{time.strftime('%m/%d/%Y, %H:%M:%S', time.localtime())} {index}")
                             with open(result_name, "a+", newline="") as file:
