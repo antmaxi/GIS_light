@@ -38,10 +38,11 @@ import processing
 
 class QGISContextManager:
     def __init__(self):
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"  # to handle QT error on some systems
         if platform.system() == "Linux":
-            self.qgis_path = "/home/anton/anaconda3/envs/arcgis/bin/qgis"
-            QgsApplication.setPrefixPath('/usr', True)
-            sys.path.append('/usr/share/qgis/python/plugins')
+            self.qgis_path = os.environ['QGIS']  # "/home/anton/anaconda3/envs/arcgis/bin/qgis"
+            #QgsApplication.setPrefixPath('/usr', True)
+            #sys.path.append('/usr/share/qgis/python/plugins')
             path_to_gdal = None
         elif platform.system() == "Windows":
             self.qgis_path = r"C:\\ProgramData\\Anaconda3\\envs\\qgis\\Library\\python\\qgis\\"
@@ -64,6 +65,7 @@ class QGISContextManager:
 
         from processing.core.Processing import Processing
         Processing.initialize()
+        #print("Please ignore 'Application path not initialized' line")
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
@@ -358,6 +360,7 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                 for k, feature in enumerate(layer_intersect.getFeatures()):
                     area_first = metric.convertAreaMeasurement(metric.measureArea(feature.geometry()),
                                                           QgsUnitTypes.AreaSquareKilometers)
+                    break
                 # is the whole area inside one municipality of our country or not
                 if len(feature_ids) == 1 and f and abs(area_first-area_total)/area_total < eps:
                     # get area of every pixel inside and append to results

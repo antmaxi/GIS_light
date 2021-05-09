@@ -7,6 +7,8 @@ import logging
 
 import argparse
 
+import config as cfg
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--debug', type=bool, help='to run in debug (small) mode or not', default=False)
 parser.add_argument('--export_layer', type=str, help='to save the created layer or not', default=False)
@@ -31,11 +33,11 @@ def main(args):
     ##############################################################
     #                    INITIALIZATION
     ##############################################################
-
-    folder_save = os.path.join(os.getcwd(), "dist", )
-    folder_tiles = os.path.join(os.getcwd(), "pixel", "tiles")
-    folder_labels = os.path.join(os.getcwd(), "label", )
-
+    folder_save = cfg.folder_save
+    folder_tiles = cfg.folder_tiles
+    folder_labels = cfg.folder_labels
+    print(folder_labels)
+    return 0
     #  set logging level
     if args.debug:
         logging.basicConfig(format='%(message)s',

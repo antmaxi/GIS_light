@@ -2,6 +2,7 @@ import argparse
 import csv
 import logging
 import os
+import platform
 import pickle
 import subprocess
 import time
@@ -31,7 +32,10 @@ def main(args):
     assert args.id_x < args.n
     assert args.id_y < args.m
     # set up paths and names
-    path_python = r"C:\ProgramData\Anaconda3\envs\qgis\python.exe"
+    if platform.system() == "Linux":
+        path_python = "python"
+    elif  platform.system() == "Windows":
+        path_python = r"C:\ProgramData\Anaconda3\envs\qgis\python.exe"
     folder = os.path.join(os.getcwd(), args.alg_type)
     folder_tiles = os.path.join(os.getcwd(), "pixel", "tiles")
     # args.tilename = os.path.join(folder_tiles, args.tilename)  # TODO if used simultaneously by several progs?-copy mb?
@@ -159,7 +163,8 @@ def main(args):
                 print(f"{time.strftime('%m/%d/%Y, %H:%M:%S', time.localtime())}, "
                       f"global speed per 1 Mpixel {((time.time() - start) / count / (pixel_sizes[0] ** 2) * 10 ** 6):.2}s, "
                       f"local speed per 1 Mpixel  {((times[-1] - times[-2]) / (pixel_sizes[0] ** 2) * 10 ** 6):.2}s, "
-                      f"processed pixels: {count * pixel_sizes[0] ** 2 // 10 ** 6} M {count * pixel_sizes[0] ** 2 % 10 ** 6 // 10 ** 3} K")
+                      f"processed pixels: {count * pixel_sizes[0] ** 2 // 10 ** 6} M "
+                      f"{count * pixel_sizes[0] ** 2 % 10 ** 6 // 10 ** 3} K")
                 try:
                     out = subprocess.run(command,
                                          capture_output=True)  # TODO: possibility to kill everything with Ctrl+C

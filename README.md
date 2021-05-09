@@ -14,7 +14,7 @@ For example to run:
 
 `python dwld.py --data_type nightly --sub_type radeg9d`
 
-Data description https://eogdata.mines.edu/products/vnl/
+Data [description](https://eogdata.mines.edu/products/vnl/)
 
 ### Pixel processing
 `qgis_utils.py` — useful functions to work with QGIS layers
@@ -22,7 +22,14 @@ Data description https://eogdata.mines.edu/products/vnl/
 `control_raster_process.py` —  to run in batches `raster_label.py` or `measure_dist.py` - labeling of raster pixels according 
 to the municipalities they intersect and getting these areas
 
-Needs: installed and configured QGIS
+Needs: installed and configured QGIS\
+It could be done by adding the path to qgis in the 
+environment (also called "qgis" here) e.g. for Linux - adding to 
+`~.bashrc` this line:\
+`export PATH="home/[user]/anaconda3/envs/qgis/bin:$PATH"`,
+in Windows this path should be added to the environment 
+variable `PATH`
+(see also `QGISManagerContext` for used setup)
 
 Usage:
 For example to run (for `--id_x_curr` from `0` to `3`):
