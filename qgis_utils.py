@@ -472,7 +472,11 @@ def measure_dist(i, j, tiles_layer, dist_type=None, save_flag=False, save_name=N
 
     tiles_joined = processing.run('native:joinbynearest', params,
                                   )["OUTPUT"]
-    for feature in tiles_joined.getFeatures():
+    for k, feature in enumerate(tiles_joined.getFeatures()):
         dis = feature["distance"]
         comm_id = feature["COMM_ID"]
+        if k > 1:
+            print("More than one tile in joined")
+    # delete point layer from memory, otherwise they will accumulate there and slow down everything
+    QgsProject.instance().removeMapLayer(target_layer.id())
     return [i, j, "{:.4f}".format(dis), comm_id]

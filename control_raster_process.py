@@ -25,7 +25,7 @@ parser.add_argument('--result_name', type=str, help='name of the file with tiles
 parser.add_argument('--code', type=str, help='name of the country to process', default=None)
 parser.add_argument('--lockdown_file', type=str, help='from which .csv take dates and nuts/comm_id', default=None)
 parser.add_argument('--load_data', type=bool, help='whether to load layers with tiles or create otherwise',
-                    default=True)
+                    default=False)
 
 
 def main(args):

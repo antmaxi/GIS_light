@@ -10,11 +10,22 @@ import argparse
 import config as cfg
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--debug', type=bool, help='to run in debug (small) mode or not', default=False)
+parser.add_argument('--lockdown_file', type=str, help='from which .csv take dates and nuts/comm_id', default=None)
+parser.add_argument('--load_data', default=False, action='store_true',
+                    help='whether to use loaded data or make it from scratch')
+
+parser.add_argument('--debug',  default=False, action='store_true', help='to run in debug (small) mode or not')
 parser.add_argument('--export_layer', type=str, help='to save the created layer or not', default=False)
 parser.add_argument('--save_name', type=str, help='name to save', default="point.sh")
-parser.add_argument('--lockdown_file', type=str, help='from which .csv take dates and nuts/comm_id', default=None)
+parser.add_argument('--append', default=False, action='store_true',
+                    help='whether to rewrite the result or append')
+
+
 parser.add_argument('--code', type=str, help='which country code to process', default=None)
+parser.add_argument('--alg_type', type=str, help='type of algorithm to run', default=None)
+
+parser.add_argument('--min_row', type=int, help='minimal index of row to process', default=0)
+parser.add_argument('--max_row', type=int, help='maximal index of row to process', default=100000000)
 
 from qgis_utils import *
 
@@ -67,63 +78,90 @@ def main(args):
         pass
         # df = pd.read_csv(os.path.join(folder_tiles, "COMM_RG_01M_2016_6933_fixed.shp"))
     save_name = None
-    # alg_type = "extract_border"
-    alg_type = "get_dist_to_border"
-    # alg_type = "get_dist_to_lockdown"
+    if args.alg_type is None:
+        #args.alg_type = "extract_border"
+        args.alg_type = "get_dist_to_border"
+        # args.alg_type = "get_dist_to_lockdown"
     if args.code is not None:
         codes = [args.code, ]
     else:
         codes = [
-            "AT",
-            "BE",
-            "CH", "CZ", "DK", "IE", "NL", "PL", "PT",
-            "LI", "MC", "SM",
-            "AD",
-            # "DE", "FR", "ES",  "IT", "UK", "GB"
+            #"AT",
+            #"BE",
+            #"CH", "CZ", "DK",
+            #"IE", "NL",
+            #"PL", "PT",
+            #"LI", "MC", "SM",
+            #"AD",
+            # "DE",
+            # "FR", "ES",  "IT", "GB", "ND"
         ]
     for code in codes:
+        # code is prefix of COMM_ID for tiles
         print(f"{time.strftime('%m/%d/%Y, %H:%M:%S', time.localtime())} Started {code}")
-        if alg_type == "extract_border":
+        if args.alg_type == "extract_border":
             save_path = os.path.join(folder_tiles, "border_" + code + "_" + crs_code + ".shp")
             with QGISContextManager():
                 tiles_border, _, err = get_border_of_country(code, tiles_path, save_flag=True, save_path=save_path,
                                                              crs_name=crs_name, rewrite=True)
-        elif alg_type == "get_dist_to_border":
-            with QGISContextManager():
-                tiles_layer = load_layer(os.path.join(folder_tiles, "border_" + code + "_" + crs_code + ".shp"))
-                # create new result file
-                result_name = os.path.join(folder_save, "dist_border_" + code + ".csv")
-                result_header = ['X', 'Y', 'DIST_BORDER_METERS', "NEAREST_COMM_ID"]
+        elif args.alg_type == "get_dist_to_border":
+            # create new result file
+            result_name = os.path.join(folder_save, "dist_border_" + code + ".csv")
+            result_header = ['X', 'Y', 'DIST_BORDER_METERS', "NEAREST_COMM_ID"]
+            if not args.append:
                 with open(result_name, "w+", newline='') as file:
                     pass
                     filewriter = csv.writer(file, delimiter=",")
                     filewriter.writerow(result_header)
                     print(f"Created file {result_name}")
+            with QGISContextManager():
+                if args.load_data:
+                    tiles_border = load_layer(os.path.join(folder_tiles, "border_" + code + "_" + crs_code + ".shp"))
+                else:
+                    tiles_border, _, err = get_border_of_country(code, tiles_path, save_flag=False,
+                                                                 crs_name=crs_name,)
                 # iterate over files with labeled pixels to get their x and y numbers
                 for f in glob.glob(os.path.join(folder_labels, "pixel_label_" + code + "_0_0*")):
                     df = pd.read_csv(f, header=0)
+                    print(f"Overall rows {len(df)}")
                     df = df[["X", "Y"]].drop_duplicates()
+                    print(f"Unique pixels {len(df)}")
                     rows = []
+                    k = 0
                     # iterate over retrieved pixels and get their distances to the selected tiles
                     for index, row in df.iterrows():
-                        i, j = row["X"], row["Y"]
-                        rows.append(measure_dist(i, j, tiles_layer,  # dist_type="point_to_tiles",
-                                                 save_flag=False))
-                        if index % 1000 == 1:
-                            print(f"{time.strftime('%m/%d/%Y, %H:%M:%S', time.localtime())} {index}")
-                            with open(result_name, "a+", newline="") as file:
-                                filewriter = csv.writer(file)
-                                for row in rows:
-                                    if row:
-                                        filewriter.writerow(row)
-                            rows = []
+                        k += 1
+                        if args.min_row < k < args.max_row:
+                            i, j = row["X"], row["Y"]
+                            rows.append(measure_dist(i, j, tiles_border,  # dist_type="point_to_tiles",
+                                                     save_flag=False))
+                            if k % 10000 == 1:
+                                print(f"{time.strftime('%m/%d/%Y, %H:%M:%S', time.localtime())} k={k}")
+                                with open(result_name, "a+", newline="") as file:
+                                    filewriter = csv.writer(file)
+                                    for row in rows:
+                                        if row:
+                                            filewriter.writerow(row)
+                                    rows = []
+                            if k % 100000 == 1:
+                                #delete_layers()
+                                t = time.time()
+                                if args.load_data:
+                                    tiles_border = load_layer(
+                                        os.path.join(folder_tiles, "border_" + code + "_" + crs_code + ".shp"))
+                                else:
+                                    tiles_border, _, err = get_border_of_country(code, tiles_path, save_flag=False,
+                                                                                 crs_name=crs_name, )
+                                print(f"Loaded again {time.strftime('%m/%d/%Y, %H:%M:%S', time.localtime())} "
+                                      f"in {(time.time()-t):.2} s k={k}")
+
                     if len(rows) > 0:
                         with open(result_name, "a+", newline="") as file:
                             filewriter = csv.writer(file)
                             for row in rows:
                                 if row:
                                     filewriter.writerow(row)
-        elif alg_type == "get_dist_to_lockdown":
+        elif args.alg_type == "get_dist_to_lockdown":
             lockdowns_path = r"C:\Users\antonma\RA\lockdown\Response_measures.xlsx"
             last_day = datetime.datetime.strptime("07/01/2020", '%m/%d/%Y')
             df = pd.read_excel(lockdowns_path, sheet_name=None, header=0)
