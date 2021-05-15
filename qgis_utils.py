@@ -37,6 +37,10 @@ import processing
 
 
 class QGISContextManager:
+    """
+        Context manager to work easier with QGIS
+        Usually makes the program exit when used the second time, # TODO why
+    """
     def __init__(self):
         os.environ["QT_QPA_PLATFORM"] = "offscreen"  # to handle QT error on some systems
         if platform.system() == "Linux":
@@ -76,6 +80,9 @@ class QGISContextManager:
 
 
 def load_layer(path_to_tiles_layer, name=None, ):
+    """
+        Load vector layer to QGIS using its path
+    """
     tiles_layer = QgsVectorLayer(path_to_tiles_layer, name, "ogr")
     if not tiles_layer.isValid():
         print(f"Layer {path_to_tiles_layer} failed to load!")
@@ -85,6 +92,9 @@ def load_layer(path_to_tiles_layer, name=None, ):
 
 
 def get_save_path(save_path=None, save_name=None):
+    """
+        Auxiliary for saving
+    """
     if save_path is None:
         assert save_name is not None, "No info about where to save provided"
         save_path = os.path.join(os.getcwd(), save_name)
@@ -92,6 +102,9 @@ def get_save_path(save_path=None, save_name=None):
 
 
 def export_layer(layer, save_path=None, save_name=None, rewrite=True):
+    """
+        Save layer
+    """
     options = QgsVectorFileWriter.SaveVectorOptions()
     options.driverName = "ESRI Shapefile"
     save_path = get_save_path(save_path=save_path, save_name=save_name)
@@ -119,7 +132,7 @@ def export_layer(layer, save_path=None, save_name=None, rewrite=True):
 
 def merge_two_vector_layers(layer, layer_add, save_flag=False, save_path=None, save_name=None):
     """
-    Add features from layer_add to layer
+        Add features from layer_add to layer
     """
     prov = layer.dataProvider()
     # add selected features
@@ -134,6 +147,7 @@ def merge_two_vector_layers(layer, layer_add, save_flag=False, save_path=None, s
 
 def create_layer_from_geom(geom, layer_type, geom_type):
     """
+        Create vector layer from its geometry object
     """
     feat = QgsFeature()
     feat.setGeometry(geom)
@@ -145,10 +159,13 @@ def create_layer_from_geom(geom, layer_type, geom_type):
     return layer
 
 
-def layer_from_filtered_tiles(tiles_layer_name, expr=None, crs_name="epsg:6933",
-                              save_flag=False, save_path=None, save_name=None,
-                              get_extent=False, ):
-    tiles_layer = load_layer(tiles_layer_name, name="tiles", )
+def layer_filter_from_expression(path_to_tiles_layer, expr=None, crs_name="epsg:6933",
+                                 save_flag=False, save_path=None, save_name=None,
+                                 get_extent=False, ):
+    """
+        Get layer from the tiles selected from another vector layer using the expression
+    """
+    tiles_layer = load_layer(path_to_tiles_layer, name="tiles", )
     # select tiles by NUTS/COMM_ID
     selected_tiles = tiles_layer.getFeatures(QgsFeatureRequest().setFilterExpression(expr))
     # print([field.name() for field in tiles_layer.fields()])  # print fields' names
@@ -189,6 +206,9 @@ def create_pixel_area(i, j, geom_type="polygon",  # either "polygon" or "point"
                       crs_source_name="epsg:4326", transform=False, crs_dest_name="epsg:6933",
                       get_area_only=False, metric=None, save_flag=False, save_name=None,
                       step=0.004166666700000000098, x0=-180.0020833333499866, y0=75.0020833333500008):
+    """
+        Create pixel quadratic area or point in the center of pixel given its 'raster coordinates'
+    """
     # TODO change hardcoded sizes (step, x0, y0) to inferred
     # parameters of the raster layer
     x2 = 180.0020862133499975
@@ -238,7 +258,9 @@ def create_pixel_area(i, j, geom_type="polygon",  # either "polygon" or "point"
 
 
 def expression_from_nuts_comm(nuts_yes=[], nuts_no=[], comm_yes=[], comm_no=[], comm_exact_yes=[], comm_exact_no=[]):
-    # construct QGIS SQL-like expression to choose tiles
+    """
+        construct QGIS SQL-like expression to choose tiles
+    """
     # TODO rewrite more beautifully
     att_name = "NUTS_CODE"
     expr = " AND ".join(map(lambda x: "\"" + att_name + "\" LIKE '" + x + "%'", nuts_yes))
@@ -266,7 +288,7 @@ def get_sizes_in_pixels_from_degrees(extents,  # xmin, xmax, ymin, ymax
                                      biggest_pixel=40, step=0.004166666700000000098,
                                      x0=-180.0020833333499866, y0=75.0020833333500008):
     """
-    Conversion from degrees to pixels with some gap to be sure
+        Conversion from degrees to pixels with some gap to be sure
     """
     pixel_extents = [math.floor((extents[0] - x0) / step) - 1,
                      math.ceil((extents[1] - x0) / step) + 1,
@@ -276,6 +298,9 @@ def get_sizes_in_pixels_from_degrees(extents,  # xmin, xmax, ymin, ymax
 
 
 def delete_layers():
+    """
+        Delete (hopefully) all the layers in the project
+    """
     if 1:
         for l in QgsProject.instance().mapLayers().values():
             QgsProject.instance().removeMapLayer(l.id())
@@ -297,7 +322,8 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                                 level=None, pixel_sizes=None, check_intersection=True, logger=None,
                                 path_to_gdal=None):
     """
-        For pixels in subarea of raster get IDs of intersecting tiles-municipalities and areas of their intersections
+        For pixels in subarea of raster get IDs of intersecting tiles-municipalities
+        and areas of their intersections
     """
     logger.debug("Processing i={} j={} size={}".format(i, j, tile_size_x))
     # print("Processing i={} j={} size={}".format(i, j, tile_size_x))
@@ -429,24 +455,35 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
 
 
 def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_path=None, save_name=None,
-                          crs_name="epsg:6933", rewrite=False):
+                          crs_name="epsg:6933", rewrite=False,
+                          used_field="nuts"):
+    """
+        Get layer - bordering to the chosen country code
+        :param path_to_tiles_layer: path to the whole layer where to extract tiles from (e.g. the whole world)
+    """
     if save_flag:
         save_path = get_save_path(save_path=save_path, save_name=save_name)
         if os.path.exists(save_path) and not rewrite:
             print(f"File exists {save_path} and not allowed to rewrite by this program")
             return 1
-    expr_in = expression_from_nuts_comm(comm_yes=[code, ])
-    expr_out = expression_from_nuts_comm(comm_no=[code, ])
+    if used_field.lower() == "nuts":
+        expr_in = expression_from_nuts_comm(nuts_yes=[code, ])
+        expr_out = expression_from_nuts_comm(nuts_no=[code, ])
+    elif used_field.lower() == "comm_id":
+        expr_in = expression_from_nuts_comm(comm_yes=[code, ])
+        expr_out = expression_from_nuts_comm(comm_no=[code, ])
+    else:
+        raise NotImplementedError(f"Wrong used_field {used_field}")
     # print(expr_in)
     # print(expr_out)
-    layer_country, _, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr_in,
-                                                    crs_name=crs_name,
-                                                    # save_flag=True, save_name="1.shp"
-                                                    )
-    layer_outside_country, _, _ = layer_from_filtered_tiles(path_to_tiles_layer, expr=expr_out,
-                                                            crs_name=crs_name,
-                                                            #        save_flag=True, save_name="2.shp"
-                                                            )
+    layer_country, _, _ = layer_filter_from_expression(path_to_tiles_layer, expr=expr_in,
+                                                       crs_name=crs_name,
+                                                       # save_flag=True, save_name="1.shp"
+                                                       )
+    layer_outside_country, _, _ = layer_filter_from_expression(path_to_tiles_layer, expr=expr_out,
+                                                               crs_name=crs_name,
+                                                               #        save_flag=True, save_name="2.shp"
+                                                               )
     params = {'INPUT': layer_outside_country,
               'INTERSECT': layer_country,
               'OUTPUT': 'TEMPORARY_OUTPUT',
@@ -461,22 +498,30 @@ def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_path=
 
 
 def measure_dist(i, j, tiles_layer, dist_type=None, save_flag=False, save_name=None):
+    """
+        Measure distance from the center of pixel to the given layer's tiles
+    """
     target_layer = create_pixel_area(i, j, geom_type="point", transform=True,
                                      crs_source_name="epsg:4326", crs_dest_name="epsg:6933",
                                      save_flag=save_flag, save_name=save_name, )
     params = {'DISCARD_NONMATCHING': False,
-              'FIELDS_TO_COPY': [],  # TODO: add the closest municipality?
+              'FIELDS_TO_COPY': [],
               'INPUT': target_layer,  # point
               'INPUT_2': tiles_layer,  # tiles
               'MAX_DISTANCE': None, 'NEIGHBORS': 1, 'OUTPUT': 'TEMPORARY_OUTPUT', 'PREFIX': ''}
 
     tiles_joined = processing.run('native:joinbynearest', params,
                                   )["OUTPUT"]
+    f = False
     for k, feature in enumerate(tiles_joined.getFeatures()):
+        # TODO what if tiles_layer empty or more than one feature here
+        if k > 1:
+            print(f"More than one tile in joined {i} {j} {dis} {comm_id}")
+            f = True
         dis = feature["distance"]
         comm_id = feature["COMM_ID"]
-        if k > 1:
-            print("More than one tile in joined")
+    if f:
+        print(f"More than one tile in joined {i} {j} {dis} {comm_id}")
     # delete point layer from memory, otherwise they will accumulate there and slow down everything
     QgsProject.instance().removeMapLayer(target_layer.id())
     return [i, j, "{:.4f}".format(dis), comm_id]

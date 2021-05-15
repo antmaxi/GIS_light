@@ -108,11 +108,11 @@ def main(args):
                       ext.yMinimum(), ext.yMaximum())
             tiles_border = load_layer(path_border)
         else:
-            expr = expression_from_nuts_comm(comm_yes=nuts)  # nuts_yes=nuts)
+            expr = expression_from_nuts_comm(nuts_yes=nuts)  # nuts_yes=nuts)
             print(f"Used expression to select the tiles {expr}")
-            filtered_tiles, extent, _ = layer_from_filtered_tiles(tiles_path, expr=expr,
-                                                                  crs_name=crs_name,
-                                                                  save_flag=False, save_path=save_path, get_extent=True)
+            filtered_tiles, extent, _ = layer_filter_from_expression(tiles_path, expr=expr,
+                                                                     crs_name=crs_name,
+                                                                     save_flag=False, save_path=save_path, get_extent=True)
             tiles_border, _, _ = get_border_of_country(code, tiles_path, save_flag=False, save_path=None,
                                                        save_name=None,
                                                        crs_name=crs_name)
@@ -181,6 +181,7 @@ def main(args):
 
     elif args.alg_type == "dist":
         print("dist not working yet")
+        return 0
         i = 0
         j = 0
         command = [path_python, code_name,
