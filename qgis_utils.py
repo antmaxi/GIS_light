@@ -380,7 +380,7 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
             if tile_size_x != 1:
                 #delete_layers()
                 # for case of one intersection check that it's of our code
-                f = feature_ids[0][0:2] == code
+                f = feature_nuts[0][0:2] == code
                 # get area of the first intersection tile
                 area_first = None
                 for k, feature in enumerate(layer_intersect.getFeatures()):
@@ -516,6 +516,7 @@ def measure_dist(i, j, tiles_layer, dist_type=None, save_flag=False, save_name=N
     for k, feature in enumerate(tiles_joined.getFeatures()):
         # TODO what if tiles_layer empty or more than one feature here
         if k > 1:
+            # TODO maybe write all comm_ids if several close with the same dist?
             print(f"More than one tile in joined {i} {j} {dis} {comm_id}")
             f = True
         dis = feature["distance"]
@@ -524,4 +525,4 @@ def measure_dist(i, j, tiles_layer, dist_type=None, save_flag=False, save_name=N
         print(f"More than one tile in joined {i} {j} {dis} {comm_id}")
     # delete point layer from memory, otherwise they will accumulate there and slow down everything
     QgsProject.instance().removeMapLayer(target_layer.id())
-    return [i, j, "{:.4f}".format(dis), comm_id]
+    return [i, j, f"{dis:.4}", comm_id]

@@ -42,7 +42,7 @@ def is_nan(aff):
     return False
 
 
-def get_string_from_sorted_set_of_datetimes(times, format_string="%m.%d", sep="-"):
+def get_string_from_sorted_set_of_datetimes(times, format_string="%m|%d", sep="-"):
     """
         Create short coding for time interval from list, with the case when there are possibly several
     """
@@ -140,7 +140,9 @@ def main(args):
                     result_header = ['X', 'Y', 'DIST_LOCKDOWN_METERS', "NEAREST_COMM_ID"]
                     # get tiles
                     lockdowns_path = args.lockdown_file
-                    last_day = datetime.datetime.strptime("11/01/2020", '%m/%d/%Y')
+                    # last day to check lockdowns
+                    last_day = datetime.datetime.strptime("10/15/2020", '%m/%d/%Y')
+
                     df = pd.read_excel(lockdowns_path, sheet_name=None, header=0)
                     #print(df)
                     # print(df.head())
@@ -153,15 +155,20 @@ def main(args):
                     for index, row in df.iterrows():
                         if row["date"] <= last_day:
                             nuts_yes = nuts_no = comm_yes = comm_no = []
-                            if not is_nan(row["nuts_affected"], ):
-                                nuts_no = row["nuts_affected"].split()
-                            if not is_nan(row["nuts_except"], ):
-                                nuts_yes = row["nuts_except"].split()
-                            if not is_nan(row["comm_affected"], ):
-                                comm_no = row["comm_affected"].split()
-                            if not is_nan(row["comm_except"], ):
-                                comm_yes = row["comm_except"].split()
-                            if code in comm_yes or nuts_yes and comm_no == [] and nuts_no == []:
+                            yes_suffix = "affected"
+                            no_suffix = "except"
+                            if not is_nan(row["nuts_" + no_suffix], ):
+                                nuts_no = row["nuts_" + no_suffix].split()
+                            if not is_nan(row["nuts_" + yes_suffix], ):
+                                nuts_yes = row["nuts_" + yes_suffix].split()
+                            if not is_nan(row["comm_" + no_suffix], ):
+                                comm_no = row["comm_" + no_suffix].split()
+                            if not is_nan(row["comm_" + yes_suffix], ):
+                                comm_yes = row["comm_" + yes_suffix].split()
+                            # if the whole country in lockdown
+                            if (code in comm_no or code in nuts_no) and comm_yes == [] and nuts_yes == []:
+                                continue
+                            if (code in comm_yes or code in nuts_yes) and comm_no == [] and nuts_no == []:
                                 continue
                             expr_curr = expression_from_nuts_comm(nuts_yes=nuts_yes, nuts_no=nuts_no,
                                                                   comm_yes=comm_yes, comm_no=comm_no)
@@ -175,9 +182,10 @@ def main(args):
                     if args.alg_type == "get_dist_to_border":
                         result_name = os.path.join(folder_save, "dist_border_" + code + ".csv")
                     elif args.alg_type == "get_dist_from_lockdown":
+                        # TODO optimize - get only the border of non-lockdown
                         if not expr:
                             continue
-                        date_string = get_string_from_sorted_set_of_datetimes(times, format_string="%m.%d", sep="-")
+                        date_string = get_string_from_sorted_set_of_datetimes(times, format_string="%m|%d", sep="-")
                         print(date_string)
                         logger.info(expr)
                         result_name = os.path.join(folder_save,
@@ -210,6 +218,7 @@ def main(args):
                             k += 1
                             if args.min_row < k < args.max_row:
                                 i, j = row["X"], row["Y"]
+                                # TODO only pixels from lockdown areas
                                 rows.append(measure_dist(i, j, tiles_to_measure_dist_to,  # dist_type="point_to_tiles",
                                                          save_flag=False))
                                 # write rows to the file in chunks
@@ -221,17 +230,6 @@ def main(args):
                                             if r:
                                                 filewriter.writerow(r)
                                         rows = []
-                                # if k % 100000 == 1:
-                                #     #delete_layers()
-                                #     t = time.time()
-                                #     if args.load_data:
-                                #         tiles_to_measure_dist_to = load_layer(
-                                #             os.path.join(folder_tiles, "border_" + code + "_" + crs_code + ".shp"))
-                                #     else:
-                                #         tiles_to_measure_dist_to, _, err = get_border_of_country(code, tiles_path, save_flag=False,
-                                #                                                      crs_name=crs_name, )
-                                #     print(f"Loaded again {time.strftime('%m/%d/%Y, %H:%M:%S', time.localtime())} "
-                                #           f"in {(time.time()-t):.2} s k={k}")
 
                         if len(rows) > 0:
                             with open(result_name, "a+", newline="") as file:

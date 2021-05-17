@@ -19,13 +19,13 @@ parser.add_argument('--id_y', type=int, help='id of the program run on y-axis', 
 parser.add_argument('--debug', type=str, help='to run in debug (small) mode or not', default="False")
 parser.add_argument('--tilename', type=str, help='name of the file with tiles to get from',
                     default="COMM_RG_01M_2016_4326_fixed.shp")
-parser.add_argument('--rewrite_result', type=bool,
-                    help='whether to rewrite or rather append the resulting csv/xlsx file', default=False)
+parser.add_argument('--rewrite_result', default=False, action="store_true",
+                    help='whether to rewrite or rather append the resulting csv/xlsx file')
 parser.add_argument('--result_name', type=str, help='name of the file with tiles', default="pixel")
-parser.add_argument('--code', type=str, help='name of the country to process', default=None)
-parser.add_argument('--lockdown_file', type=str, help='from which .csv take dates and nuts/comm_id', default=None)
-parser.add_argument('--load_data', type=bool, help='whether to load layers with tiles or create otherwise',
-                    default=False)
+parser.add_argument('--code', default=None, type=str, help='name of the country to process', )
+parser.add_argument('--lockdown_file', default=None, type=str, help='from which .csv take dates and nuts/comm_id', )
+parser.add_argument('--load_data', default=False, action="store_true", help='whether to load layers with tiles or create otherwise',
+                    )
 
 
 def main(args):
@@ -64,14 +64,14 @@ def main(args):
         code_name = "measure_dist.py"
         pixel_sizes = [1]
         result_header = ['X', 'Y', 'DISTANCE',
-                         'CLOSEST_COMM_ID', ]  # TODO add smth else, implement COMM_ID in measure file
+                         'CLOSEST_COMM_ID', ]
     else:
         raise NotImplementedError(f"Not known algorithm type {args.alg_type}")
 
     # create result file with header
     if os.path.exists(result_name):
         os.remove(result_name)
-    if not os.path.exists(folder):
+    elif not os.path.exists(folder):
         os.makedirs(folder)
     with open(result_name, "w+", newline='') as file:
         filewriter = csv.writer(file, delimiter=",")
@@ -89,10 +89,10 @@ def main(args):
     logger = logging.getLogger(__name__)
 
     # get tiles and extents for country(ies) by NUTS code
-    code = args.code # "BE"
+    code = args.code
     nuts = [code, ]
     save_path = os.path.join(folder_tiles, log_string + ".shp")
-    print(f"Save results to {save_path}")
+    print(f"Save results to {result_name}")
     with QGISContextManager():
         # get in-country tiles and also direct neighboring tiles
         if args.load_data:
@@ -108,7 +108,7 @@ def main(args):
                       ext.yMinimum(), ext.yMaximum())
             tiles_border = load_layer(path_border)
         else:
-            expr = expression_from_nuts_comm(nuts_yes=nuts)  # nuts_yes=nuts)
+            expr = expression_from_nuts_comm(nuts_yes=nuts)  # comm_yes=nuts)
             print(f"Used expression to select the tiles {expr}")
             filtered_tiles, extent, _ = layer_filter_from_expression(tiles_path, expr=expr,
                                                                      crs_name=crs_name,
@@ -120,6 +120,7 @@ def main(args):
         tiles_to_label = merge_two_vector_layers(filtered_tiles, tiles_border)
         export_layer(tiles_to_label, save_path=in_border_tiles_path)
         print(f"Extents of country {extent}")
+        print(f"Saved tiles to {in_border_tiles_path}")
         # TODO: for further optimization if several programs divide the whole area, take only tiles intersecting with
         #  the current part
     (x0, x1, y0, y1) = get_sizes_in_pixels_from_degrees(extent)
