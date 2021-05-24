@@ -263,7 +263,7 @@ def expression_from_nuts_comm(nuts_yes=[], nuts_no=[], comm_yes=[], comm_no=[], 
     """
     # TODO rewrite more beautifully
     att_name = "NUTS_CODE"
-    expr = " AND ".join(map(lambda x: "\"" + att_name + "\" LIKE '" + x + "%'", nuts_yes))
+    expr = " OR ".join(map(lambda x: "\"" + att_name + "\" LIKE '" + x + "%'", nuts_yes))
     if expr and nuts_no:
         expr += " AND "
     if nuts_no:
@@ -271,7 +271,9 @@ def expression_from_nuts_comm(nuts_yes=[], nuts_no=[], comm_yes=[], comm_no=[], 
     att_name = "COMM_ID"
     if expr and (comm_yes or comm_no or comm_exact_yes or comm_exact_no):
         expr += " OR "
-    expr += " AND ".join(map(lambda x: "\"" + att_name + "\" = '" + x + "'", comm_exact_yes))
+    expr1 = " OR ".join(map(lambda x: "\"" + att_name + "\" = '" + x + "'", comm_exact_yes))
+    if expr1:
+        expr += "(" + expr1 + ")"
     if comm_exact_no:
         expr += " AND ".join(map(lambda x: "\"" + att_name + "\" <> '" + x + "'", comm_exact_no))
     if expr and (comm_yes or comm_no):
@@ -388,6 +390,7 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                                                           QgsUnitTypes.AreaSquareKilometers)
                     break
                 # is the whole area inside one municipality of our country or not
+                # yes
                 if len(feature_ids) == 1 and f and abs(area_first-area_total)/area_total < eps:
                     # get area of every pixel inside and append to results
                     for x in range(0, tile_size_x):
@@ -423,7 +426,8 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                 # account for possible repetitions of the same tile
                 for k, feature in enumerate(layer_intersect.getFeatures()):
                     id = feature["COMM_ID"]
-                    if (id not in ids) and (id[0:2] == code):  # check that part is from this country
+                    nuts_curr = feature["NUTS_CODE"]
+                    if (id not in ids) and (nuts_curr[0:2] == code):  # check that part is from this country + not seen
                         ids.append(id)
                         ks.append(k)
                         # get area of intersection in km^2
@@ -525,4 +529,4 @@ def measure_dist(i, j, tiles_layer, dist_type=None, save_flag=False, save_name=N
         print(f"More than one tile in joined {i} {j} {dis} {comm_id}")
     # delete point layer from memory, otherwise they will accumulate there and slow down everything
     QgsProject.instance().removeMapLayer(target_layer.id())
-    return [i, j, f"{dis:.4}", comm_id]
+    return [i, j, f"{float(dis):.4}", comm_id]
