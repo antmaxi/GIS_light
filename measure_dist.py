@@ -138,7 +138,7 @@ def main(args):
                         tiles_to_measure_dist_to, _, err = get_border_of_country(code, tiles_path, save_flag=False,
                                                                                  crs_name=crs_name,
                                                                                  used_field="nuts")
-                    expr_to_dates = {None: None}  # stub
+                    expr_to_dates = {None: [None]*5}  # stub
                 elif args.alg_type == "get_dist_lockdown":
                     last_day = datetime.datetime.strptime("10/15/2020", '%m/%d/%Y')
                     result_header = ['X', 'Y', 'DIST_LOCKDOWN_METERS', "NEAREST_COMM_ID"]
@@ -150,8 +150,7 @@ def main(args):
                     df = df["Sheet1"]
                     code_xlsx = code if code not in ("GB", "ND") else "UK"
                     df = df[df["nuts_country"] == code_xlsx]
-                    typ = []
-                    expr_to_dates = defaultdict(lambda: [])
+                    expr_to_dates = dict()
                     for index, row in df.iterrows():
                         if row["date"] <= last_day:
                             nuts_yes = nuts_no = comm_yes = comm_no = []
@@ -172,23 +171,33 @@ def main(args):
                                 comm_no = row["comm_" + no_suffix].split()
                             if not is_nan(row["comm_" + yes_suffix], ):
                                 comm_yes = row["comm_" + yes_suffix].split()
-                            # if the whole country in lockdown
 
+                            for codes in (comm_yes, comm_no, nuts_yes, nuts_no):
+                                if code in codes:
+                                    codes.remove(code)
+                            # if the whole country in lockdown
+                            if comm_yes == [] and nuts_yes == [] and comm_no == [] and nuts_no == []:
+                                continue
                             if (code in comm_no or code in nuts_no) and comm_yes == [] and nuts_yes == []:
                                 continue
                             if (code in comm_yes or code in nuts_yes) and comm_no == [] and nuts_no == []:
-                                continue
-                            if comm_yes == [] and nuts_yes == [] and comm_no == [] and nuts_no == []:
                                 continue
                             expr_curr = expression_from_nuts_comm(nuts_yes=nuts_yes, nuts_no=nuts_no,
                                                                   comm_yes=comm_yes, comm_no=comm_no)
                             if not expr_curr:
                                 continue
-                            expr_curr = "\"NUTS_CODE\" LIKE '" + code_xlsx + "%' AND (" + expr_curr + ")"  # or COMM_ID
 
-                            expr_to_dates[expr_curr].append(row["date"])
-                for expr, times in expr_to_dates.items():
-                    # print(expr, times)
+                            expr_curr = "\"NUTS_CODE\" LIKE '" + code_xlsx + "%' AND (" + expr_curr + ")"  # or COMM_ID
+                            if expr_curr in expr_to_dates:
+                                expr_to_dates[expr_curr][0].append(row["date"])
+                            else:
+                                expr_to_dates[expr_curr] = [[row["date"], ], ]
+                            for codes in (comm_yes, comm_no, nuts_yes, nuts_no):
+                                expr_to_dates[expr_curr].append(codes)
+                curr = 0
+                for expr, data in expr_to_dates.items():
+                    times, comm_yes, comm_no, nuts_yes, nuts_no = data
+                    curr += 1
                     if args.alg_type == "get_dist_to_border":
                         result_name = os.path.join(folder_save, "dist_border_" + code + ".csv")
                     elif args.alg_type == "get_dist_lockdown":
@@ -208,9 +217,6 @@ def main(args):
                                                                                       save_flag=False,
                                                                                       save_name="saved13.shp"
                                                                                       )
-                        # for j, feat in enumerate(tiles_to_measure_dist_to.getFeatures()):
-                        #     pass
-                        #     print(j)
                     # create new result file
                     if not args.append:
                         with open(result_name, "w+", newline='') as file:
@@ -226,31 +232,36 @@ def main(args):
                     for f in glob.glob(os.path.join(folder_labels, "pixel_label_" + code + "_0_0*")):
                         df = pd.read_csv(f, header=0)
                         print(f"Overall rows {len(df)}")
-                        df = df[["X", "Y"]].drop_duplicates()
+                        df = df[["X", "Y", "NUTS_CODE", "COMM_ID"]].drop_duplicates()
                         print(f"Unique pixels {len(df)}")
                         rows = []
                         k = 0
+                        print(nuts_yes, nuts_no, comm_yes, comm_no)
                         # iterate over retrieved pixels and get their distances to the selected tiles
                         for index, row in df.iterrows():
                             k += 1
                             if args.min_row < k < args.max_row:
                                 i, j = row["X"], row["Y"]
                                 # check that pixel is not from tiles to measure dist to
-                                f = False
-                                for nuts in nuts_yes:
-                                    if row["NUTS_CODE"].startswith(nuts):
-                                        f = True
-                                for comm in comm_yes:
-                                    if row["COMM_ID"].startswith(comm):
-                                        f = True
-                                for nuts in nuts_no:
-                                    if row["NUTS_CODE"].startswith(nuts):
-                                        f = False
-                                for comm in comm_no:
-                                    if row["COMM_ID"].startswith(comm):
-                                        f = False
-                                if f:
-                                    continue
+                                if args.alg_type == "get_dist_lockdown":
+                                    f = True
+                                    for nuts in nuts_yes:
+                                        if row["NUTS_CODE"].startswith(nuts):
+                                            f = False
+                                    for comm in comm_yes:
+                                        if row["COMM_ID"].startswith(comm):
+                                            f = False
+                                    for nuts in nuts_no:
+                                        if row["NUTS_CODE"].startswith(nuts):
+                                            f = True
+                                    for comm in comm_no:
+                                        if row["COMM_ID"].startswith(comm):
+                                            f = True
+                                    if f:
+                                        print(f"Take {row['NUTS_CODE']}")
+                                        return 0
+                                    else:
+                                        continue
                                 rows.append(measure_dist(i, j, tiles_to_measure_dist_to,  # dist_type="point_to_tiles",
                                                          save_flag=False)
                                             #    .append(  # TODO add current comm and nuts or no
