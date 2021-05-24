@@ -41,12 +41,13 @@ class QGISContextManager:
         Context manager to work easier with QGIS
         Usually makes the program exit when used the second time, # TODO why
     """
+
     def __init__(self):
         os.environ["QT_QPA_PLATFORM"] = "offscreen"  # to handle QT error on some systems
         if platform.system() == "Linux":
             self.qgis_path = os.environ['QGIS']  # "/home/anton/anaconda3/envs/arcgis/bin/qgis"
-            #QgsApplication.setPrefixPath('/usr', True)
-            #sys.path.append('/usr/share/qgis/python/plugins')
+            # QgsApplication.setPrefixPath('/usr', True)
+            # sys.path.append('/usr/share/qgis/python/plugins')
             path_to_gdal = None
         elif platform.system() == "Windows":
             self.qgis_path = r"C:\\ProgramData\\Anaconda3\\envs\\qgis\\Library\\python\\qgis\\"
@@ -69,7 +70,7 @@ class QGISContextManager:
 
         from processing.core.Processing import Processing
         Processing.initialize()
-        #print("Please ignore 'Application path not initialized' line")
+        # print("Please ignore 'Application path not initialized' line")
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
@@ -320,7 +321,7 @@ def debug_output_with_time(st, ts, logger):
 def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                                 tile_size_x=None, tile_size_y=None,
                                 metric=None,
-                                eps=0.01/100.0,  # relative error allowed for the check of the whole area in intersect
+                                eps=0.01 / 100.0,  # relative error allowed for the check of the whole area in intersect
                                 level=None, pixel_sizes=None, check_intersection=True, logger=None,
                                 path_to_gdal=None):
     """
@@ -380,18 +381,18 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                 assert ind == 0  # only one feature in pixel
             # single pixel or aggregation of pixels?
             if tile_size_x != 1:
-                #delete_layers()
+                # delete_layers()
                 # for case of one intersection check that it's of our code
                 f = feature_nuts[0][0:2] == code
                 # get area of the first intersection tile
                 area_first = None
                 for k, feature in enumerate(layer_intersect.getFeatures()):
                     area_first = metric.convertAreaMeasurement(metric.measureArea(feature.geometry()),
-                                                          QgsUnitTypes.AreaSquareKilometers)
+                                                               QgsUnitTypes.AreaSquareKilometers)
                     break
                 # is the whole area inside one municipality of our country or not
                 # yes
-                if len(feature_ids) == 1 and f and abs(area_first-area_total)/area_total < eps:
+                if len(feature_ids) == 1 and f and abs(area_first - area_total) / area_total < eps:
                     # get area of every pixel inside and append to results
                     for x in range(0, tile_size_x):
                         for y in range(0, tile_size_y):
@@ -451,11 +452,35 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
             debug_output_with_time("Dumped results", ts, logger)
 
             # remove loaded layers
-            #delete_layers()
+            # delete_layers()
             # gc.collect()
             debug_output_with_time("Deleted all layers", ts, logger)
 
         return global_count
+
+
+def get_border_of_area(path_to_tiles_layer, expr_in, expr_out, crs_name,
+                       save_flag=False, save_path=None, save_name=None, rewrite=False):
+    layer_country, _, _ = layer_filter_from_expression(path_to_tiles_layer, expr=expr_in,
+                                                       crs_name=crs_name,
+                                                       # save_flag=True, save_name="1.shp"
+                                                       )
+    layer_outside_country, _, _ = layer_filter_from_expression(path_to_tiles_layer, expr=expr_out,
+                                                               crs_name=crs_name,
+                                                               #        save_flag=True, save_name="2.shp"
+                                                               )
+    params = {'INPUT': layer_outside_country,
+              'INTERSECT': layer_country,
+              'OUTPUT': 'TEMPORARY_OUTPUT',
+              'PREDICATE': [4]}  # touches
+    tiles_border = \
+        processing.run('qgis:extractbylocation', params,
+                       )["OUTPUT"]
+
+    err_save = None
+    if save_flag:
+        err_save = export_layer(tiles_border, save_path=save_path, save_name=save_name, rewrite=rewrite)
+    return tiles_border, save_path, err_save
 
 
 def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_path=None, save_name=None,
@@ -480,24 +505,9 @@ def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_path=
         raise NotImplementedError(f"Wrong used_field {used_field}")
     # print(expr_in)
     # print(expr_out)
-    layer_country, _, _ = layer_filter_from_expression(path_to_tiles_layer, expr=expr_in,
-                                                       crs_name=crs_name,
-                                                       # save_flag=True, save_name="1.shp"
-                                                       )
-    layer_outside_country, _, _ = layer_filter_from_expression(path_to_tiles_layer, expr=expr_out,
-                                                               crs_name=crs_name,
-                                                               #        save_flag=True, save_name="2.shp"
-                                                               )
-    params = {'INPUT': layer_outside_country,
-              'INTERSECT': layer_country,
-              'OUTPUT': 'TEMPORARY_OUTPUT',
-              'PREDICATE': [4]}  # touches
-    tiles_border = \
-        processing.run('qgis:extractbylocation', params,
-                       )["OUTPUT"]
-    err_save = None
-    if save_flag:
-        err_save = export_layer(tiles_border, save_path=save_path, save_name=save_name, rewrite=rewrite)
+    tiles_border, save_path, err_save = get_border_of_area(path_to_tiles_layer, expr_in, expr_out, crs_name,
+                                                           save_flag=save_flag, save_path=save_path,
+                                                           save_name=save_name, rewrite=rewrite)
     return tiles_border, save_path, err_save
 
 

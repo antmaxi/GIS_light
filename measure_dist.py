@@ -192,12 +192,14 @@ def main(args):
                                 expr_to_dates[expr_curr][0].append(row["date"])
                             else:
                                 expr_to_dates[expr_curr] = [[row["date"], ], ]
-                            for codes in (comm_yes, comm_no, nuts_yes, nuts_no):
-                                expr_to_dates[expr_curr].append(codes)
+                            if len(expr_to_dates[expr_curr]) == 1:
+                                for codes in (comm_yes, comm_no, nuts_yes, nuts_no):
+                                    expr_to_dates[expr_curr].append(codes)
                 curr = 0
                 for expr, data in expr_to_dates.items():
                     times, comm_yes, comm_no, nuts_yes, nuts_no = data
                     curr += 1
+                    return 0
                     if args.alg_type == "get_dist_to_border":
                         result_name = os.path.join(folder_save, "dist_border_" + code + ".csv")
                     elif args.alg_type == "get_dist_lockdown":
@@ -258,8 +260,7 @@ def main(args):
                                         if row["COMM_ID"].startswith(comm):
                                             f = True
                                     if f:
-                                        print(f"Take {row['NUTS_CODE']}")
-                                        return 0
+                                        pass
                                     else:
                                         continue
                                 rows.append(measure_dist(i, j, tiles_to_measure_dist_to,  # dist_type="point_to_tiles",
