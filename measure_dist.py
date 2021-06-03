@@ -2,12 +2,15 @@ import datetime
 import glob
 import math
 import os
+import traceback
+
 import pandas as pd
 from collections import defaultdict
 import logging
 
 import argparse
 
+import config
 import config as cfg
 
 parser = argparse.ArgumentParser()
@@ -29,6 +32,7 @@ parser.add_argument('--alg_subtype', type=str, help='subtype of algorithm to run
 
 parser.add_argument('--min_row', type=int, help='minimal index of row to process', default=0)
 parser.add_argument('--max_row', type=int, help='maximal index of row to process', default=100000000)
+parser.add_argument('--id', type=str, help='id for name of resulting files', default="")
 
 from qgis_utils import *
 
@@ -68,16 +72,23 @@ def main(args):
     ##############################################################
     #                    INITIALIZATION
     ##############################################################
-    folder_save = cfg.folder_save
+    folder_dist_save = cfg.folder_dist_save
     folder_tiles = cfg.folder_tiles
     folder_labels = cfg.folder_labels
 
-    #  set logging level
+    #  set logging
+    if args.alg_type == "get_dist_lockdown":
+        assert not (args.alg_subtype is None), "there should be subtype, 'to_lockdown' or 'from_lockdown'"
+        log_string = "_".join([args.alg_type, args.alg_subtype, args.code])
+    else:
+        log_string = "_".join([args.alg_type, args.code])
+    log_file = os.path.join(folder_dist_save, "_".join(["log", log_string + args.id + ".txt"]))
     if args.debug:
         logging.basicConfig(format='%(message)s',
                             level=logging.DEBUG)  # choose between WARNING - INFO - DEBUG
     else:
-        logging.basicConfig(format='%(message)s',
+        logging.basicConfig(filename=log_file,
+                            format='%(message)s',
                             level=logging.INFO)
     logger = logging.getLogger(__name__)
 
@@ -90,6 +101,9 @@ def main(args):
     crs_code = crs_name.split(":")[-1]
     tiles_filename = "COMM_RG_01M_2016_" + crs_code + "_fixed" + ".shp"
     tiles_path = os.path.join(folder_tiles, tiles_filename)
+
+    with open(log_file, 'w+') as f:
+        pass
     # file with all countries' tiles
     path_to_tiles_layer = os.path.join(folder_tiles, tiles_filename)
 
@@ -128,8 +142,9 @@ def main(args):
                     get result name, header and tiles to measure distance to 
                 '''
                 if args.alg_type == "get_dist_to_border":
-                    result_name = os.path.join(folder_save, "dist_border_" + code + ".csv")
-                    result_header = ['X', 'Y', 'DIST_BORDER_METERS', "NEAREST_COMM_ID"]
+                    result_name = os.path.join(folder_dist_save, "dist_to_border_" + code + args.id + ".csv")
+                    result_header = ['X', 'Y', "COUNTRY_CODE", "NUTS_CODE", "COMM_ID",
+                                     'DIST_BORDER_KM', "NEAREST_COMM_ID", "NEAREST_NUTS", "NEAREST_COUNTRY_CODE"]
                     # get tiles
                     if args.load_data:
                         tiles_to_measure_dist_to = load_layer(
@@ -138,10 +153,10 @@ def main(args):
                         tiles_to_measure_dist_to, _, err = get_border_of_country(code, tiles_path, save_flag=False,
                                                                                  crs_name=crs_name,
                                                                                  used_field="nuts")
-                    expr_to_dates = {None: [None]*5}  # stub
+                    expr_to_dates = {None: [None] * 5}  # stub
                 elif args.alg_type == "get_dist_lockdown":
                     last_day = datetime.datetime.strptime("10/15/2020", '%m/%d/%Y')
-                    result_header = ['X', 'Y', 'DIST_LOCKDOWN_METERS', "NEAREST_COMM_ID"]
+                    result_header = config.dist_header
                     # get tiles
                     lockdowns_path = args.lockdown_file
                     # last day to check lockdowns
@@ -199,9 +214,8 @@ def main(args):
                 for expr, data in expr_to_dates.items():
                     times, comm_yes, comm_no, nuts_yes, nuts_no = data
                     curr += 1
-                    return 0
                     if args.alg_type == "get_dist_to_border":
-                        result_name = os.path.join(folder_save, "dist_border_" + code + ".csv")
+                        result_name = os.path.join(folder_dist_save, "dist_border_" + code + args.id + ".csv")
                     elif args.alg_type == "get_dist_lockdown":
                         # TODO optimize - get only the border of non-lockdown instead of the whole lockdown area
                         if not expr:
@@ -210,9 +224,9 @@ def main(args):
                         print(date_string)
                         logger.info(expr)
                         if args.alg_subtype is not None:
-                            result_name = os.path.join(folder_save,
+                            result_name = os.path.join(folder_dist_save,
                                                        "dist_" + args.alg_subtype + "_"
-                                                       + code + "_" + date_string + "_" + ".csv")
+                                                       + code + "_" + date_string + "_" + args.id + ".csv")
                         else:
                             raise NotImplementedError("Need subtype for lockdown measuring")
                         tiles_to_measure_dist_to, _, _ = layer_filter_from_expression(tiles_path, expr=expr,
@@ -238,46 +252,72 @@ def main(args):
                         print(f"Unique pixels {len(df)}")
                         rows = []
                         k = 0
-                        print(nuts_yes, nuts_no, comm_yes, comm_no)
+                        print(f"nuts_yes={nuts_yes}, nuts_no={nuts_no}, comm_yes={comm_yes}, comm_no{comm_no}")
                         # iterate over retrieved pixels and get their distances to the selected tiles
-                        for index, row in df.iterrows():
+                        count = 0
+                        for index, row in df.iterrows():  # TODO add some parallelization
                             k += 1
-                            if args.min_row < k < args.max_row:
+                            if args.min_row < k <= args.max_row:
                                 i, j = row["X"], row["Y"]
                                 # check that pixel is not from tiles to measure dist to
                                 if args.alg_type == "get_dist_lockdown":
-                                    f = True
-                                    for nuts in nuts_yes:
-                                        if row["NUTS_CODE"].startswith(nuts):
-                                            f = False
-                                    for comm in comm_yes:
-                                        if row["COMM_ID"].startswith(comm):
-                                            f = False
-                                    for nuts in nuts_no:
-                                        if row["NUTS_CODE"].startswith(nuts):
+
+                                    try:
+                                        if args.alg_subtype == "to_lockdown":
                                             f = True
-                                    for comm in comm_no:
-                                        if row["COMM_ID"].startswith(comm):
-                                            f = True
+                                            for nuts in nuts_yes:
+                                                if str(row["NUTS_CODE"]).startswith(nuts):
+                                                    #print(str(row["NUTS_CODE"]))
+                                                    f = False
+                                            for comm in comm_yes:
+                                                if str(row["COMM_ID"]).startswith(comm):
+                                                    #print(str(row["NUTS_CODE"]))
+                                                    f = False
+                                            for nuts in nuts_no:
+                                                if str(row["NUTS_CODE"]).startswith(nuts):
+                                                    f = True
+                                            for comm in comm_no:
+                                                if str(row["COMM_ID"]).startswith(comm):
+                                                    f = True
+                                        else:
+                                            f = False
+                                            for nuts in nuts_no:
+                                                if str(row["NUTS_CODE"]).startswith(nuts):
+                                                    f = True
+                                            for comm in comm_no:
+                                                if str(row["COMM_ID"]).startswith(comm):
+                                                    f = True
+                                            for nuts in nuts_yes:
+                                                if str(row["NUTS_CODE"]).startswith(nuts):
+                                                    f = False
+                                            for comm in comm_yes:
+                                                if str(row["COMM_ID"]).startswith(comm):
+                                                    f = False
+                                    except Exception as e:
+                                        logging.error(traceback.format_exc())
                                     if f:
                                         pass
                                     else:
+                                        #print(row["NUTS_CODE"])
                                         continue
-                                rows.append(measure_dist(i, j, tiles_to_measure_dist_to,  # dist_type="point_to_tiles",
-                                                         save_flag=False)
-                                            #    .append(  # TODO add current comm and nuts or no
+                                count += 1
+                                rows.append([i, j, code, row["NUTS_CODE"], row["COMM_ID"]]  # current data
+                                            + measure_dist(i, j, tiles_to_measure_dist_to,  # nearest tile data
+                                                           )
                                             )
                                 # write rows to the file in chunks
                                 if rows and k % 10000 == 1:
-                                    print(f"{time.strftime('%m/%d/%Y, %H:%M:%S', time.localtime())} k={k}")
+                                    print(f"{time.strftime('%m/%d/%Y, %H:%M:%S', time.localtime())} k={k} "
+                                          f"written={count}")
                                     with open(result_name, "a+", newline="") as file:
                                         filewriter = csv.writer(file)
                                         for r in rows:
                                             if r:
                                                 filewriter.writerow(r)
                                         rows = []
-
                         if len(rows) > 0:
+                            print(f"{time.strftime('%m/%d/%Y, %H:%M:%S', time.localtime())} k={k} "
+                                  f"written={count}")
                             with open(result_name, "a+", newline="") as file:
                                 filewriter = csv.writer(file)
                                 for row in rows:

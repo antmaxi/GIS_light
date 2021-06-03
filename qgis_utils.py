@@ -511,7 +511,7 @@ def get_border_of_country(code, path_to_tiles_layer, save_flag=False, save_path=
     return tiles_border, save_path, err_save
 
 
-def measure_dist(i, j, tiles_layer, dist_type=None, save_flag=False, save_name=None):
+def measure_dist(i, j, tiles_layer, save_flag=False, save_name=None):
     """
         Measure distance from the center of pixel to the given layer's tiles
     """
@@ -535,8 +535,9 @@ def measure_dist(i, j, tiles_layer, dist_type=None, save_flag=False, save_name=N
             f = True
         dis = feature["distance"]
         comm_id = feature["COMM_ID"]
+        nuts_code = feature["NUTS_CODE"]
     if f:
-        print(f"More than one tile in joined {i} {j} {dis} {comm_id}")
+        print(f"More than one tile in joined {i} {j} {dis} {comm_id} {feature['CNTR_CODE']}")  #
     # delete point layer from memory, otherwise they will accumulate there and slow down everything
     QgsProject.instance().removeMapLayer(target_layer.id())
-    return [i, j, f"{float(dis):.4}", comm_id]
+    return [f"{float(dis)/1000:.2f}", comm_id, nuts_code, feature["CNTR_CODE"]]

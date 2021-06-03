@@ -64,6 +64,8 @@ Using QGIS plugin [NNJoin](http://arken.nmbu.no/~havatv/gis/qgisplugins/NNJoin/)
 which finds the Cartesian distance from pixel's center point to the closest tile from the set of tiles
 (e.g. municipalities under lockdown or neighboring border tiles)
 
+All Scotland's municipalities NUTS are set as UKM.
+
 TODO:
 1) for optimization maybe take not all the pixels in the area, but
    1) only which were already labeled
