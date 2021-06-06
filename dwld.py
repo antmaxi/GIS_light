@@ -161,7 +161,7 @@ def main(args):
     elif args.parall_type == "thread":
         ParallelExecutor = concurrent.futures.ThreadPoolExecutor(max_workers=args.workers)
     else:
-        NotImplementedError
+        raise NotImplementedError
     with ParallelExecutor as executor:
         future_to_url = {executor.submit(download_url, url, save_path_2_level, session, headers, check_size=True):
                              url for url in links_dwn}

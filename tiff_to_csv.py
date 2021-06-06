@@ -8,9 +8,12 @@ import os
 from pathlib import Path
 import re
 
+import shutil
 import argparse
 import subprocess
 import concurrent.futures
+
+import traceback
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--date_min', type=str, help='start date of files to process (included)', default="20180101")
@@ -70,10 +73,12 @@ def convert_geotiff_to_csv_parquet(f):
         # print(df)
         # print(df.iloc[:, 2].value_counts())
         # print(width, height, minX, minY, maxX, maxY)
-        print(print(df.size) - dx*dy)
-        print(dx*dy)
+        assert df.shape[0] == dx*dy
+
         df.to_parquet(path_parquet, index=False)
-        # parquet_to_csv(path_parquet, path_csv)
+        # ext = ".parquet"
+        # shutil.move(path_parquet, folder_final)  # doesn't work moving to mounted disk
+        #parquet_to_csv(path_parquet, path_csv)
         # df.to_csv(path_csv, index=False)
         # print(time.strftime(time_format) + " Done saving to csv")
         print(f"{time.strftime(time_format)} Size of resulting file is "
@@ -86,11 +91,12 @@ def convert_geotiff_to_csv_parquet(f):
                 os.remove(path_raster)
         # TODO move result to folder_final/... (sudo needed?)
         # update list of files - account for newly updated ones
-        files = glob.glob(os.path.join(folder_to_process, "*.tif"))
+        # files = glob.glob(os.path.join(folder_to_process, "*.tif"))
     except Exception as exc:
         with open(log_file, 'a+') as f:
             f.write(f"{date} {exc}\n")
         print("EXCEPTION")
+        traceback.print_exc()
         return None
     return date
 
@@ -103,6 +109,7 @@ def main(args):
     print(time.strftime(time_format))
     dates = []
     files = glob.glob(os.path.join(folder_to_process, "*.tif"))
+    print([re.findall(r'\d+', Path(f).stem)[0] for f in files])
     if args.parall_type == "process":
         ParallelExecutor = concurrent.futures.ProcessPoolExecutor(max_workers=args.workers)
     elif args.parall_type == "thread":
@@ -117,7 +124,7 @@ def main(args):
             try:
                 date = future.result()
                 dates.append(date)
-                print(dates)
+                print(date)
             except Exception as exc:
                 print('%r generated an exception: %s' % (f, exc))
             else:
@@ -136,7 +143,8 @@ if __name__ == '__main__':
     folder_result = os.path.join(folder_data, args.type, "result")
     folder_temp = os.path.join(folder_data, "temp")
     folder_logs = os.path.join(folder_data, args.type, "logs")
-    folder_final = os.path.join(r"Z:\Projekte\COVID19_Remote\02_processed_data\raster")
+    folder_final = os.path.join(r"Z:\Projekte\COVID19_Remote\02_processed_data\raster", "parquet",
+                                args.type)
 
     time_format = "%d%m %H:%M:%S"
     # TIFF to CSV

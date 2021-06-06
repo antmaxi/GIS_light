@@ -22,6 +22,9 @@ def cont_quest():
 
 
 def main(args):
+    """
+        Merge and lockdown data about pixels in one file
+    """
     folder_lockdown = os.path.join(config.folder_dist_save, "raw")
     folder_border = os.path.join(config.folder_dist_save)
     assert args.code is not None
@@ -48,6 +51,7 @@ def main(args):
             return 1
         cont_quest()
         df_l = pd.read_csv(f_l, header=0)
+        # TODO better concatenation, e.g. first sort pixels "X" and "Y", then just do horizontal concat
         for ind_b, f_b in enumerate(glob.glob(pattern_border)):
             print(f_b)
             start_time = time.time()
@@ -57,7 +61,6 @@ def main(args):
             print(df_b["X"].tolist()[0:10])
             print(df_b["X"].tolist()[0:10])
             assert df_b["X"].tolist() == df_l["X"].tolist() and df_b["Y"].tolist() == df_l["Y"].tolist()
-            return 0
             for index, row_b in df_b.iterrows():  # ['X', 'Y', "COUNTRY_CODE", "NUTS_CODE", "COMM_ID",
                 k += 1
                 # 5: 'DIST_LOCKDOWN_KM', "NEAREST_COMM_ID", "NEAREST_NUTS", "NEAREST_COUNTRY_CODE"]

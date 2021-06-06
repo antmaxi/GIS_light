@@ -23,9 +23,12 @@ def cont_quest():
 
 
 def main(args):
-    folder = os.path.join(config.folder_dist_save, "raw")
+    """
+        Merge files 'to' and 'from' lockdown for all the dates and for the input code of country
+    """
+    folder = os.path.join(config.folder_dist_save)
     assert args.code is not None
-    pattern1 = os.path.join(folder, ("*" + "from_lockdown_" + args.code + "*"))
+    pattern1 = os.path.join(folder, ("*" + "from_lockdown_" + args.code + "*.csv"))
 
     n_rows = []
     for ind, f in enumerate(glob.glob(pattern1)):
@@ -40,7 +43,6 @@ def main(args):
         else:
             raise NameError(f"Not found 'to' or 'from' in the filename {f}")
         return dfnow
-
     for ind, f in enumerate(glob.glob(pattern1)):
         date = f.split("_")[-2]
         if date in dates:
@@ -79,9 +81,11 @@ def main(args):
             cont_quest()
         result = pd.concat(list_of_dfs, ignore_index=True)
         result = result.drop_duplicates(subset=['X', 'Y'], keep='last')
-        result.to_csv(result_name, mode="w+")
+        # TODO sort
+        result.to_csv(result_name, mode="w+", index=False)
 
         df = pd.read_csv(result_name, header=0)
+        print(df)
         print(f"Total rows {len(df)}")
         #assert sum(n_rows) == len(df)
 
