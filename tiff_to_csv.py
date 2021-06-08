@@ -19,7 +19,7 @@ import traceback
 import logging
 
 logging.basicConfig(format='%(asctime)s | %(levelname)s | %(message)s',
-                            level=logging.INFO)
+                            level=logging.DEBUG)
 logger = logging.getLogger("conversion")
 logger.setLevel(getattr(logging, "INFO"))
 
@@ -37,14 +37,45 @@ parser.add_argument('--parall_type', type=str, choices=("process", "thread"), he
                     default="thread")
 
 
-def parquet_to_csv(path_parquet, path_csv):
-    df = pd.read_parquet(path_parquet)
-    df.to_csv(path_csv, index=False)
+def get_first_number_from_string(st):
+    return re.findall(r'\d+', st)[0]
 
 
-def convert_geotiff_to_csv_parquet(file_path, args):
+def convert_parquet_to_csv(path_parquet, args):
+    filename = Path(path_parquet).stem
+    print(filename)
+    date = get_first_number_from_string(filename)
+    log_file = os.path.join(folder_logs, date + args.extension + ".log")
+    with open(log_file, 'w+'):
+        pass
+    #try:
+    if 1:
+        df = pd.read_parquet(path_parquet)
+        logger.info(f"Read parquet from {path_parquet}")
+
+        dir = os.path.dirname(path_parquet)
+        path_csv = os.path.join(dir, filename + ".csv")
+        df.to_csv(path_csv, index=False)
+        logger.info(f"Dumped parquet to {path_csv}")
+        path_device_csv = os.path.join(folder_device_processed_csv, args.type, filename + ".csv")
+        shutil.copyfile(path_csv, path_device_csv)
+        if 0:
+            os.remove(path_csv)
+            os.remove(path_parquet)
+        logger.info(f"Done uploading of {path_csv}")
+        return get_first_number_from_string(filename)
+    #except Exception as exc:
+    if 0:
+        with open(log_file, 'a+') as f:
+            f.write(f"{date} {exc}\n")
+        print("EXCEPTION")
+        traceback.print_exc()
+        return None
+
+
+def convert_geotiff_to_parquet(file_path, args):
     filename = Path(file_path).stem
-    date = re.findall(r'\d+', filename)[0]
+    date = get_first_number_from_string(filename)
     if not (args.date_min <= date <= args.date_max):
         return None
     log_file = os.path.join(folder_logs, date + ".log")
@@ -61,7 +92,7 @@ def convert_geotiff_to_csv_parquet(file_path, args):
         path_raster = os.path.join(folder_to_process, filename + ".tif")
         if not os.path.exists(path_raster) or (sys.getsizeof(path_raster) != sys.getsizeof(file_path)):
             shutil.copyfile(file_path, path_raster)
-            logger.info(f"copied {file_path} to {path_raster}")
+            logger.debug(f"Downloaded {file_path} to {path_raster}")
 
         # get one area - approx Western Europe
         com_string = "gdal_translate -of XYZ -q -srcwin " + str(x1) + ", " + str(y1) + ", " + str(
@@ -93,7 +124,7 @@ def convert_geotiff_to_csv_parquet(file_path, args):
         # parquet_to_csv(path_parquet, path_csv)
         # df.to_csv(path_csv, index=False)
         # print(time.strftime(time_format) + " Done saving to csv")
-        print(f"{time.strftime(time_format)} Size of resulting file is "
+        print(f"{time.strftime(time_format)} Size of resulting file {path_parquet} is "
               f"{os.path.getsize(path_parquet) / pow(2, 20):.1f} MB")
         # delete used files
         if os.path.exists(path_raster_cropped):
@@ -103,7 +134,7 @@ def convert_geotiff_to_csv_parquet(file_path, args):
         # upload result to device
         path_result_device = os.path.join(folder_device_processed, args.type, filename + args.extension)
         shutil.copyfile(path_parquet, path_result_device)
-        logger.info(f"copied {path_parquet} to {path_result_device}")
+        logger.debug(f"Uploaded {path_parquet} to {path_result_device}")
         if 0:
             os.remove(path_parquet)
         # TODO move result to folder_final/... (sudo needed?)
@@ -119,6 +150,10 @@ def convert_geotiff_to_csv_parquet(file_path, args):
 
 
 def main(args):
+    """
+        args.extension == ".csv" - take parquet from computer, convert to csv and upload to the drive
+        args.extension == ".parquet" - download .tif from drive, crop and convert to parquet and upload to the drive
+    """
     os.makedirs(folder_temp, exist_ok=True)
     os.makedirs(folder_logs, exist_ok=True)
     os.makedirs(folder_result, exist_ok=True)
@@ -126,18 +161,33 @@ def main(args):
     while True:
         print(time.strftime(time_format))
         dates = []
-        t = "nightly"
+        #t = "nightly"
         args.type = "rade9d"
-        ext = "parquet"
-        made_filenames = [Path(f).stem
-                          for f in list(glob.glob(os.path.join(folder_local_data, args.type, "result", "*" + ext)))] \
-                         + [Path(f).stem
-                            for f in list(glob.glob(os.path.join(folder_device_processed, args.type, "*" + ext)))]
-        filepaths = []
-        for filepath_curr in sorted(glob.glob(os.path.join(folder_device_raw, t, args.type, "*.tif"))):
-            filename_curr = Path(filepath_curr ).stem
-            if filename_curr not in made_filenames:
-                filepaths.append(filepath_curr)
+        ext = args.extension
+
+        # get filepaths to process
+        if args.extension == ".parquet":
+            made_filenames = [Path(f).stem
+                              for f in list(glob.glob(os.path.join(folder_local_data, args.type, "result", "*" + ext)))] \
+                             + [Path(f).stem
+                                for f in list(glob.glob(os.path.join(folder_device_processed_parquet, args.type, "*" + ext)))]
+            filepaths = []
+            for filepath_curr in sorted(glob.glob(os.path.join(folder_loca, t, args.type, "*.tif"))):
+                filename_curr = Path(filepath_curr ).stem
+                if filename_curr not in made_filenames:
+                    filepaths.append(filepath_curr)
+
+            func = convert_geotiff_to_parquet
+        elif args.extension == ".csv":
+            made_filenames = [Path(f).stem
+                                for f in list(glob.glob(os.path.join(folder_device_processed_csv, args.type, "*.csv")))]
+            filepaths = []
+            for filepath_curr in sorted(glob.glob(os.path.join(folder_result, "*.parquet"))):
+                filename_curr = Path(filepath_curr).stem
+                if filename_curr not in made_filenames:
+                    filepaths.append(filepath_curr)
+            func = convert_parquet_to_csv
+
         # dates = ([re.findall(r'\d+', Path(f).stem)[0] for f in files])
         if args.parall_type == "process":
             ParallelExecutor = concurrent.futures.ProcessPoolExecutor(max_workers=args.workers)
@@ -145,9 +195,12 @@ def main(args):
             ParallelExecutor = concurrent.futures.ThreadPoolExecutor(max_workers=args.workers)
         else:
             raise NotImplementedError
+
         with ParallelExecutor as executor:
-            future_to_url = {executor.submit(convert_geotiff_to_csv_parquet, f, args):
+
+            future_to_url = {executor.submit(func, f, args):
                                  f for f in filepaths}
+
             for future in concurrent.futures.as_completed(future_to_url):
                 f = future_to_url[future]
                 try:
@@ -159,10 +212,9 @@ def main(args):
                 else:
                     print(f'{f} processed with result {date}')
 
-        # TODO automatic download of raw data and upload of results
         print(f"Done dates {dates}")
         print(f"from {dates[0]} to {dates[-1]}")
-        time.sleep(30 * 60)
+        #time.sleep(30 * 60)
 
 
 if __name__ == '__main__':
@@ -175,7 +227,9 @@ if __name__ == '__main__':
     folder_logs = os.path.join(folder_data, args.type, "logs")
 
     folder_device_raw = r"Z:\Projekte\COVID19_Remote\01_raw_data"
-    folder_device_processed = r"Z:\Projekte\COVID19_Remote\02_processed_data\raster\parquet"
+    folder_device_processed = r"Z:\Projekte\COVID19_Remote\02_processed_data\raster"
+    folder_device_processed_parquet = os.path.join(folder_device_processed, "parquet")
+    folder_device_processed_csv = os.path.join(folder_device_processed, "csv")
 
     folder_local_data = r"C:\Users\antonma\RA\data"
 
