@@ -252,7 +252,7 @@ def create_pixel_area(i, j, geom_type="polygon",  # either "polygon" or "point"
     layer = create_layer_from_geom(geom, layer_type, geom_type)
     if save_flag:
         if save_name is None:
-            save_name = "_".join([geom_type, str(i), str(j)]) + ".shp"
+            save_name = "_".join([geom_type, str(i), str(j), str(tile_size_x), str(tile_size_y)]) + ".shp"
         save_path = os.path.join(os.getcwd(), save_name)
         err_save = export_layer(layer, save_path)
     return layer
@@ -368,8 +368,11 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
         debug_output_with_time("Intersected tiles with pixel", ts, logger)
 
         # get IDs of intersection tiles
-        feature_ids = [feature["COMM_ID"] for feature in layer_intersect.getFeatures()]
-        feature_nuts = [feature["NUTS_CODE"] for feature in layer_intersect.getFeatures()]
+        if code == "LAND":  # if check land_use
+            feature_ids = [feature["Code_18"] for feature in layer_intersect.getFeatures()]
+        else:  # if check countries
+            feature_ids = [feature["COMM_ID"] for feature in layer_intersect.getFeatures()]
+            feature_nuts = [feature["NUTS_CODE"] for feature in layer_intersect.getFeatures()]
         rows = []  # result accumulation
         # if there is some intersection with municipalities' tiles
         if len(feature_ids) > 0:
@@ -382,25 +385,34 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
             # single pixel or aggregation of pixels?
             if tile_size_x != 1:
                 # delete_layers()
-                # for case of one intersection check that it's of our code
-                f = feature_nuts[0][0:2] == code
                 # get area of the first intersection tile
                 area_first = None
                 for k, feature in enumerate(layer_intersect.getFeatures()):
                     area_first = metric.convertAreaMeasurement(metric.measureArea(feature.geometry()),
                                                                QgsUnitTypes.AreaSquareKilometers)
                     break
+                if code == "LAND":  # if check land_use
+                    f = True
+                else:
+                    # for case of one intersection check that it's of our code
+                    f = feature_nuts[0][0:2] == code
                 # is the whole area inside one municipality of our country or not
                 # yes
-                if len(feature_ids) == 1 and f and abs(area_first - area_total) / area_total < eps:
+                if len(feature_ids) == 1 \
+                        and f \
+                        and abs(area_first - area_total) / area_total < eps:
+                    if code == "LAND":  # if check land_use
+                        tile_info = [feature_ids[0], ]
+                    else:
+                        tile_info = [feature_nuts[0], feature_ids[0]]
                     # get area of every pixel inside and append to results
                     for x in range(0, tile_size_x):
                         for y in range(0, tile_size_y):
-                            rows.append([i + x, j + y, feature_nuts[0], feature_ids[0],
-                                         "{:.6f}".format(create_pixel_area(i + x, j + y, geom_type="polygon",
-                                                                           tile_size_x=1, tile_size_y=1,
-                                                                           get_area_only=True, metric=metric)),
-                                         100.0])
+                            rows.append([i + x, j + y], + tile_info \
+                                        + ["{:.6f}".format(create_pixel_area(i + x, j + y, geom_type="polygon",
+                                                                             tile_size_x=1, tile_size_y=1,
+                                                                             get_area_only=True, metric=metric)),
+                                           100.0])
                     debug_output_with_time(f"Done with area of size {tile_size_x}", ts, logger)
                     global_count += tile_size_x * tile_size_y
                 # if area is divided between municipalities
@@ -426,9 +438,15 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                 ks = []
                 # account for possible repetitions of the same tile
                 for k, feature in enumerate(layer_intersect.getFeatures()):
-                    id = feature["COMM_ID"]
-                    nuts_curr = feature["NUTS_CODE"]
-                    if (id not in ids) and (nuts_curr[0:2] == code):  # check that part is from this country + not seen
+                    if code == "LAND":
+                        id = feature["Code_18"]
+                        f_no_repeat_and_ours = True
+                    else:
+                        id = feature["COMM_ID"]
+                        nuts_curr = feature["NUTS_CODE"]
+                        f_no_repeat_and_ours = (id not in ids) and (
+                                    nuts_curr[0:2] == code)  # check that part is from this country + not seen
+                    if f_no_repeat_and_ours:
                         ids.append(id)
                         ks.append(k)
                         # get area of intersection in km^2
@@ -436,10 +454,28 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                             metric.convertAreaMeasurement(metric.measureArea(feature.geometry()),
                                                           QgsUnitTypes.AreaSquareKilometers))
                 # form results
-                for ind in range(len(ids)):
-                    k = ks[ind]
-                    rows.append([i, j, feature_nuts[k], feature_ids[k],
-                                 "{:.6f}".format(areas[ind]), "{:.4f}".format((areas[ind] / area_total) * 100.0)])
+                # if checking land_use
+                if code == "LAND":   # TODO group by land use type
+                    areas_classified = {"URB": 0.0, "IND": 0.0, "ROAD": 0.0}
+                    code_to_area = {"111": "URB", "112": "URB",
+                                    "121": "IND",
+                                    "122": "ROAD", "123": "ROAD", "124": "ROAD"}
+                    for ind in range(len(ids)):
+                        k = ks[ind]
+                        areas_classified[code_to_area[feature_ids[k]]] += areas[ind]
+                        #logger.info(areas_classified)
+                    res = []
+                    for land in areas_classified.keys():
+                        res += ["{:.6f}".format(areas_classified[land]),
+                                "{:.4f}".format((areas_classified[land] / area_total) * 100.0)]
+                    rows.append([i, j, ] + res)
+                    #print(rows[-1])
+                else:
+                    for ind in range(len(ids)):
+                        k = ks[ind]
+                        tile_info = [feature_nuts[k], feature_ids[k]]
+                        rows.append([i, j, ] + tile_info
+                                    + ["{:.6f}".format(areas[ind]), "{:.4f}".format((areas[ind] / area_total) * 100.0)])
                 debug_output_with_time("Calculated area of intersections", ts, logger)
                 global_count += 1
             # dump obtained results
@@ -540,4 +576,4 @@ def measure_dist(i, j, tiles_layer, save_flag=False, save_name=None):
         print(f"More than one tile in joined {i} {j} {dis} {comm_id} {feature['CNTR_CODE']}")  #
     # delete point layer from memory, otherwise they will accumulate there and slow down everything
     QgsProject.instance().removeMapLayer(target_layer.id())
-    return [f"{float(dis)/1000:.2f}", comm_id, nuts_code, feature["CNTR_CODE"]]
+    return [f"{float(dis) / 1000:.2f}", comm_id, nuts_code, feature["CNTR_CODE"]]

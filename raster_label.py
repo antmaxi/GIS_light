@@ -76,7 +76,12 @@ def main(args):
     check_intersection = True
 
     if check_intersection:
-        result_header = ['X', 'Y', 'NUTS_CODE', 'COMM_ID', 'AREA', 'AREA_PERCENT']
+        if args.code == "LAND":
+            result_header = ['X', 'Y', 'AREA_URB', 'AREA_PERCENT_URB',
+                             'AREA_IND', 'AREA_PERCENT_IND',
+                             'AREA_ROAD', 'AREA_PERCENT_ROAD']
+        else:
+            result_header = ['X', 'Y', 'NUTS_CODE', 'COMM_ID', 'AREA', 'AREA_PERCENT']
         pixel_sizes = [
             40,
             8,
@@ -123,6 +128,7 @@ def main(args):
         times = [time.time()]
         #print(sys.argv)
         tiles = load_layer(args.tilepath)
+        #if args.code
         global_count = get_intersect_ids_and_areas(int(args.x0), int(args.y0), tiles,
                                                    args.result_name, args.code,
                                                    global_count,
