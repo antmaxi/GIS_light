@@ -287,7 +287,8 @@ if __name__ == '__main__':
     y1 = 2808
     y2 = 10441
     output_bounds = [-12.2, 31.5, 28, 63.3]
-    dx = x2 - x1 + 1
-    dy = y2 - y1 + 1
+    dx = x2 - x1 + 1  # 9650
+    dy = y2 - y1 + 1  # 7634
+    # dx * dy = total pixels = 73668100
 
     main(args)
