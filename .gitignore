@@ -6,3 +6,8 @@
 /qgis_code/
 /saved/
 /dist/
+.idea/
+
+__pycache__/
+
+land_use/
