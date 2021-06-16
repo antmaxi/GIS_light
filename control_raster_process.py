@@ -37,6 +37,8 @@ def main(args):
     elif  platform.system() == "Windows":
         path_python = r"C:\ProgramData\Anaconda3\envs\qgis\python.exe"
     folder = os.path.join(os.getcwd(), args.alg_type)
+    if args.code == "LAND":
+        path_land_use_tiles = os.path.join(os.getcwd(), "land_use", "used_4326.shp")
     folder_tiles = os.path.join(os.getcwd(), "pixel", "tiles")
     # args.tilename = os.path.join(folder_tiles, args.tilename)  # TODO if used simultaneously by several progs?-copy mb?
     tiles_path = os.path.join(folder_tiles, args.tilename)
@@ -132,7 +134,7 @@ def main(args):
         #  the current part
             (x0, x1, y0, y1) = get_sizes_in_pixels_from_degrees(extent)
         else:
-            in_border_tiles_path = r"C:\Users\antonma\RA\land_use\used_4326.shp"
+            in_border_tiles_path = path_land_use_tiles
             (x0, x1, y0, y1) = (40272, 49921, 2808, 10441)  # from tiff_to_csv.py
     if args.code == "FR":  # otherwise takes also islands far away from the continent
         x0 = 41000

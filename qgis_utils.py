@@ -408,7 +408,7 @@ def get_intersect_ids_and_areas(i, j, tiles, result_name, code, global_count,
                     # get area of every pixel inside and append to results
                     for x in range(0, tile_size_x):
                         for y in range(0, tile_size_y):
-                            rows.append([i + x, j + y], + tile_info \
+                            rows.append([i + x, j + y] + tile_info \
                                         + ["{:.6f}".format(create_pixel_area(i + x, j + y, geom_type="polygon",
                                                                              tile_size_x=1, tile_size_y=1,
                                                                              get_area_only=True, metric=metric)),
