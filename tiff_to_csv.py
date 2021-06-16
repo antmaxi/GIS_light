@@ -28,7 +28,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--date_min', type=str, help='start date of files to process (included)', default="20180101")
 parser.add_argument('--date_max', type=str, help='end date of files to process (included)',
                     default="20211231")
-parser.add_argument('--type', type=str, help='folder to use', choices=("rade9d", "cloud_cover"),
+parser.add_argument('--type', type=str, help='folder to use', choices=("rade9d", "cloud_cover",
+                                                                       "vcmcfg", "vcmslcfg"),
                     required=True)
 parser.add_argument('--extension', default=".parquet", type=str, choices=(".parquet", ".csv"),
                     help='extension of result', )
@@ -40,6 +41,8 @@ parser.add_argument("--parquet_to_csv", default=False, action='store_true',
                     help='whether to convert from parquet to csv after conversion from tif to parquet')
 parser.add_argument("--delete", default=False, action='store_true',
                     help='whether to delete produced and uploaded to the server files')
+parser.add_argument("--from_tgz", default=False, action='store_true',
+                    help='whether to decompress files from .tgz')
 
 
 def get_first_number_from_string(st):
@@ -49,23 +52,46 @@ def get_first_number_from_string(st):
 def convert_parquet_to_csv(path_parquet, args):
     """ path_parquet - path to the .parquet file on local machine"""
     filename = Path(path_parquet).stem
-    print(filename)
+    logger.info(f"Processing {filename}")
     date = get_first_number_from_string(filename)
-    log_file = os.path.join(folder_logs, date + args.extension + ".log")
+    local_log_file = os.path.join(folder_logs, date + args.extension + ".log")
 
     dir = os.path.dirname(path_parquet)
     path_csv = os.path.join(dir, filename + ".csv")
 
-    with open(log_file, 'w+'):
+    with open(local_log_file, 'w+'):
         pass
     try:
         df = pd.read_parquet(path_parquet)
         logger.debug(f"Read parquet from {path_parquet}")
+
         def fn(row):
-            #print(row.X, row.Y, row.X + (row.Y - y1) * dx - x1)
+            # print(row.X, row.Y, row.X + (row.Y - y1) * dx - x1)
             return row.X + (row.Y - y1) * dx - x1
-        df['ID'] = df["X"] - x1 + (df["Y"] - y1)#df.apply(lambda row: row.X + (row.Y - y1) * dx - x1, axis=1)  # size of raster is 86401 x 33601
+
+        # get single ID instead of X and Y
+        # df.apply(lambda row: row.X + (row.Y - y1) * dx - x1, axis=1)  # size of raster is 86401 x 33601
+        df['ID'] = df["X"] - x1 + (df[ "Y"] - y1)
         df = df.drop(columns=['X', 'Y'])  # int32 max 2,147,483,647
+        # round float values to get lesser size
+        # in rade9d step of value is 0.1, therefore 1 decimal is enough
+        logger.debug(f"Before decimal rounding have:\n {df.head(10)}")
+        if args.type in ("rade9d",):
+            df["VALUE"] = df["VALUE"].round(1)
+            logger.debug(f"Round to 1 decimal")
+        elif args.type.startswith("vcm"):
+            # in monthly data ending by "avg_rade9h" step of value is 0.01, therefore 2 decimals are enough
+            if filename.endswith("avg_rade9h"):
+                df["VALUE"] = df["VALUE"].round(2)
+                logger.debug(f"Round to 2 decimals")
+            elif filename.endswith("cf_cvg"):
+                pass
+            else:
+                raise ValueError("not know type of filename")
+        elif args.type in ("cloud_cover",):
+            pass
+        else:
+            raise ValueError("Not known type of processing")
         df = df[["ID", "VALUE"]]
         df.to_csv(path_csv, index=False)
         logger.debug(f"Dumped parquet to {path_csv}")
@@ -74,11 +100,11 @@ def convert_parquet_to_csv(path_parquet, args):
         if args.delete:
             os.remove(path_csv)
             os.remove(path_parquet)
-        #os.remove(path_parquet)
+        # os.remove(path_parquet)
         logger.debug(f"Done uploading of {path_csv} to {path_device_csv}")
         return get_first_number_from_string(filename)
     except Exception as exc:
-        with open(log_file, 'a+') as f:
+        with open(local_log_file, 'a+') as f:
             f.write(f"{date} {exc}\n")
         print("EXCEPTION")
         traceback.print_exc()
@@ -89,80 +115,72 @@ def convert_parquet_to_csv(path_parquet, args):
 
 def convert_geotiff_to_parquet(file_path, args):
     """ file_path - path to the .tif file on remote device """
+    #if args.type.startswith("vcm"):
+    #    filename = Path(file_path).name  # with extension
+    #else:
     filename = Path(file_path).stem
     date = get_first_number_from_string(filename)
     if not (args.date_min <= date <= args.date_max):
         return None
-    log_file = os.path.join(folder_logs, date + ".log")
-    with open(log_file, 'w+'):
+    local_log_file = os.path.join(folder_logs, date + ".log")
+    with open(local_log_file, 'w+'):
         pass
     path_raster_cropped = os.path.join(folder_temp, filename + "_EUcropped.xyz")
     path_csv = os.path.join(folder_result, filename + ".csv")
     path_parquet = os.path.join(folder_result, filename + ".parquet")
-    logger.debug(f"Processing {filename} ",
-          f"save results to {os.path.join(folder_result, filename) + '.parquet and/or .csv'}")
+    logger.debug(
+        f"Processing {filename} save results to {os.path.join(folder_result, filename) + '.parquet and/or .csv'}")
 
     try:
         # download raster to process
         path_raster = os.path.join(folder_to_process, filename + ".tif")
-        if 1:
+        if args.type in ("cloud_cover", "rade9d"):
             if not os.path.exists(path_raster) or (sys.getsizeof(path_raster) != sys.getsizeof(file_path)):
                 shutil.copyfile(file_path, path_raster)
                 logger.debug(f"Downloaded {file_path} to {path_raster}")
             else:
                 logger.debug(f"File {path_raster} is of the right size, no need to download again")
 
-            # get one area - approx Western Europe
-            com_string = "gdal_translate -of XYZ -q -srcwin " + str(x1) + ", " + str(y1) + ", " + str(
-                dx) + ", " + str(dy) + " " + str(path_raster) + " " + str(path_raster_cropped)
-            subprocess.run(com_string)
-            df = pd.read_csv(path_raster_cropped, sep=" ", header=None, names=["X", "Y", "VALUE"])
-            logger.debug(f"Cropped from {path_raster} to {path_raster_cropped}")
+        # get one area - approx Western Europe
+        com_string = "gdal_translate -of XYZ -q -srcwin " + str(x1) + ", " + str(y1) + ", " + str(
+            dx) + ", " + str(dy) + " " + str(path_raster) + " " + str(path_raster_cropped)
+        subprocess.run(com_string)
+        df = pd.read_csv(path_raster_cropped, sep=" ", header=None, names=["X", "Y", "VALUE"])
+        logger.debug(f"Cropped from {path_raster} to {path_raster_cropped}")
         # get metadata of raster
-        ds = gdal.Open(path_raster)
-        width = ds.RasterXSize
-        height = ds.RasterYSize
+        ds = gdal.Open(path_raster)  # width = ds.RasterXSize #height = ds.RasterYSize
         # convert coords to pixel ids
-        gt = ds.GetGeoTransform() #(-180.00208333335, 0.0041666667, 0.0, 75.00208333335, 0.0, -0.0041666667)
+        gt = ds.GetGeoTransform()  # (-180.00208333335, 0.0041666667, 0.0, 75.00208333335, 0.0, -0.0041666667)
         del ds
-        minX = gt[0]
-        #minY = gt[3] + width * gt[4] + height * gt[5]
-        # maxX = gt[0] + width * gt[1] + height * gt[2]
-        maxY = gt[3]
+        minX = gt[0]  # minY = gt[3] + width * gt[4] + height * gt[5]
+        maxY = gt[3]  # maxX = gt[0] + width * gt[1] + height * gt[2]
         pixel_size = gt[1]  # width, [5] - height
         df.iloc[:, 0] = ((df.iloc[:, 0] - minX) / pixel_size).astype("int32")
         df.iloc[:, 1] = ((maxY - df.iloc[:, 1]) / pixel_size).astype("int32")
         # print(df)
         # print(df.iloc[:, 2].value_counts())
         # print(width, height, minX, minY, maxX, maxY)
-        assert df.shape[0] == dx * dy,  f"size {df.shape[0]} instead of {dx * dy}"
+        assert df.shape[0] == dx * dy, f"size {df.shape[0]} instead of {dx * dy}"
 
         df.to_parquet(path_parquet, index=False)
-        # ext = ".parquet"
-        # parquet_to_csv(path_parquet, path_csv)
-        # df.to_csv(path_csv, index=False)
-        # print(time.strftime(time_format) + " Done saving to csv")
         logger.debug(f"Size of resulting file {path_parquet} is "
-              f"{os.path.getsize(path_parquet) / pow(2, 20):.1f} MB")
+                     f"{os.path.getsize(path_parquet) / pow(2, 20):.1f} MB")
         # delete used files
+        if os.path.exists(path_raster_cropped):
+            os.remove(path_raster_cropped)
         if args.delete:
-            if os.path.exists(path_raster_cropped):
-                os.remove(path_raster_cropped)
             if os.path.exists(path_raster):
                 os.remove(path_raster)
         # upload result to device
         path_result_device = os.path.join(folder_device_processed_parquet, args.type, filename + ".parquet")
         shutil.copyfile(path_parquet, path_result_device)
         logger.debug(f"Uploaded {path_parquet} to {path_result_device}")
-
-        # TODO move result to folder_final/... (sudo needed?)
-        # update list of files - account for python newly updated ones
-        # files = glob.glob(os.path.join(folder_to_process, "*.tif"))
+        # TODO update list of files - account for python newly updated ones
     except (KeyboardInterrupt, SystemExit):
         if os.path.exists(path_parquet):
             os.remove(path_parquet)
     except Exception as exc:
-        with open(log_file, 'a+') as f:
+        with open(local_log_file, 'a+') as f:
             f.write(f"{date} {exc}\n")
         print("EXCEPTION")
         traceback.print_exc()
@@ -173,10 +191,10 @@ def convert_geotiff_to_parquet(file_path, args):
     try:
         if args.parquet_to_csv:
             convert_parquet_to_csv(path_parquet, args)
-            if args.delete:
+            if args.delete and os.path.exists(path_parquet):
                 os.remove(path_parquet)
     except Exception as exc:
-        with open(log_file, 'a+') as f:
+        with open(local_log_file, 'a+') as f:
             f.write(f"{date} {exc}\n")
         print("EXCEPTION")
         traceback.print_exc()
@@ -191,24 +209,25 @@ def main(args):
         args.extension == ".csv" - take parquet from computer, convert to csv and upload to the drive
         args.extension == ".parquet" - download .tif from drive, crop and convert to parquet and upload to the drive
     """
-    os.makedirs(folder_temp, exist_ok=True)
-    os.makedirs(folder_logs, exist_ok=True)
-    os.makedirs(folder_result, exist_ok=True)
 
     while True:
         print(time.strftime(time_format))
         dates = []
-        t = "nightly"
-        ext = args.extension
+        # set general type, to find folder with raw .tif data on the remote device
+        if args.type in ("cloud_cover", "rade9d"):
+            t = "nightly"
+        else:
+            t = "monthly"
 
         # get filepaths to process
         if args.extension == ".parquet":
+            if args.from_tgz:
+                pass
             made_filenames = [Path(f).stem
-                              for f in list(glob.glob(os.path.join(folder_local_data, args.type, "result", "*"
-                                                                   + ".parquet")))] \
+                              for f in list(glob.glob(os.path.join(folder_result, "*" + ".parquet")))] \
                              + [Path(f).stem
                                 for f in
-                                list(glob.glob(os.path.join(folder_device_processed_parquet, args.type, "*"
+                                list(glob.glob(os.path.join(folder_device_processed_parquet_current, "*"
                                                             + ".parquet")))]
             filepaths = []
             for filepath_curr in sorted(glob.glob(os.path.join(folder_device_raw, t, args.type, "*.tif"))):
@@ -216,13 +235,18 @@ def main(args):
                 if filename_curr not in made_filenames:
                     filepaths.append(filepath_curr)
 
+            #filepaths = filepaths[0:1]  # TODO delete not in debug
+
             func = convert_geotiff_to_parquet
         elif args.extension == ".csv":
-            made_filenames = [Path(f).stem
-                              for f in list(glob.glob(os.path.join(folder_device_processed_csv, args.type, "*.csv")))]# \
-                             #+ [Path(f).stem
-                             #   for f in
-                             #   list(glob.glob(os.path.join(folder_local_data, args.type, "result", "*" + ".csv")))]
+            made_filenames = []  # TODO delete in not debug
+            if 1:
+                made_filenames = [Path(f).stem
+                                  for f in
+                                  list(glob.glob(os.path.join(folder_device_processed_csv, args.type, "*.csv")))]  # \
+            # + [Path(f).stem
+            #   for f in
+            #   list(glob.glob(os.path.join(folder_local_data, args.type, "result", "*" + ".csv")))]
 
             filepaths = []
             for filepath_curr in sorted(glob.glob(os.path.join(folder_result, "*.parquet"))):
@@ -230,19 +254,18 @@ def main(args):
                 if filename_curr not in made_filenames:
                     filepaths.append(filepath_curr)
             func = convert_parquet_to_csv
-
         # dates = ([re.findall(r'\d+', Path(f).stem)[0] for f in files])
         if args.parall_type == "process":
-            ParallelExecutor = concurrent.futures.ProcessPoolExecutor(max_workers=args.workers)
+            parallel_executor = concurrent.futures.ProcessPoolExecutor(max_workers=args.workers)
         elif args.parall_type == "thread":
-            ParallelExecutor = concurrent.futures.ThreadPoolExecutor(max_workers=args.workers)
+            parallel_executor = concurrent.futures.ThreadPoolExecutor(max_workers=args.workers)
         else:
             raise NotImplementedError
 
-        with ParallelExecutor as executor:
+        with parallel_executor as executor:
 
-            future_to_url = {executor.submit(func, f, args):
-                                 f for f in filepaths}
+            future_to_url = {executor.submit(func, filepath, args):
+                                 filepath for filepath in filepaths}
 
             for future in concurrent.futures.as_completed(future_to_url):
                 f = future_to_url[future]
@@ -262,30 +285,57 @@ def main(args):
 
 if __name__ == '__main__':
     args = parser.parse_args()
+    # existing folders
+    folder_local_data = r"C:\Users\antonma\RA\data"
+    folder_to_process = os.path.join(folder_local_data, args.type)
+    # possibly new folders
+    folder_result = os.path.join(folder_local_data, args.type, "result")
+    folder_temp = os.path.join(folder_local_data, "temp")
+    folder_logs = os.path.join(folder_local_data, args.type, "logs")
 
-    folder_data = r"C:\Users\antonma\RA\data"
-    folder_to_process = os.path.join(folder_data, args.type)
-    folder_result = os.path.join(folder_data, args.type, "result")
-    folder_temp = os.path.join(folder_data, "temp")
-    folder_logs = os.path.join(folder_data, args.type, "logs")
-
+    # remote device - existing folders
     folder_device_raw = r"Z:\Projekte\COVID19_Remote\01_raw_data"
+    # remote device - possibly new folders
     folder_device_processed = r"Z:\Projekte\COVID19_Remote\02_processed_data\raster"
     folder_device_processed_parquet = os.path.join(folder_device_processed, "parquet")
     folder_device_processed_csv = os.path.join(folder_device_processed, "csv")
+    folder_device_processed_parquet_current = os.path.join(folder_device_processed_parquet, args.type)
+    folder_device_processed_csv_current = os.path.join(folder_device_processed_csv, args.type)
+    for folder in (folder_temp, folder_logs, folder_result,
+                   folder_device_processed, folder_device_processed_csv, folder_device_processed_parquet,
+                   folder_device_processed_parquet_current, folder_device_processed_csv):
+        os.makedirs(folder, exist_ok=True)
 
-    folder_local_data = r"C:\Users\antonma\RA\data"
+    global_log_file = os.path.join(folder_logs, args.type + time.strftime("_%Y%m%d_%H%M%S") + ".log")
 
-    folder_final = os.path.join(r"Z:\Projekte\COVID19_Remote\02_processed_data\raster", "parquet",
-                                args.type)
+    fh = logging.FileHandler(global_log_file)
+    fh.setLevel(logging.DEBUG)
+    logger.addHandler(fh)
 
     time_format = "%d%m %H:%M:%S"
     # TIFF to CSV
-    # xyz = gdal.Translate("dem2.xyz", ds)4
-    x1 = 40272
-    x2 = 49921
-    y1 = 2808
-    y2 = 10441
+    # xyz = gdal.Translate("dem2.xyz", ds)
+    x1_0 = 40272
+    x2_0 = 49921
+    y1_0= 2808
+    y2_0 = 10441
+    if args.type.startswith("vcm"):  # monthly
+        # -60.0020833333500008,0.0020827333499938 : 59.9979176266500076,75.0020833333500008
+        # 28800 x 18000 0.004166666700000000098,-0.004166666700000000098
+        # 240 pix /1 degree
+
+        # account for this shift of the presented in .tif area:
+        x1 = x1_0 - 240 * 120  # corner of zero: -180 -> -60
+        x2 = x2_0 - 240 * 120
+        y1 = y1_0 # corner of zero: 75 -> 75
+        y2 = y2_0
+    else:  # the whole world for cloud_cover, rade9d
+        # -180.0020833333499866, -65.0020844533500082: 180.0020862133499975, 75.0020833333500008
+        # 86401 x 33601 0.004166666700000000098,-0.004166666700000000098
+        x1 = x1_0
+        x2 = x2_0
+        y1 = y1_0
+        y2 = y2_0
     output_bounds = [-12.2, 31.5, 28, 63.3]
     dx = x2 - x1 + 1  # 9650
     dy = y2 - y1 + 1  # 7634
