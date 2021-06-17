@@ -114,5 +114,7 @@ For example to run:
     y: (2808, 10441) (dy=7634) included; 
    in degrees it's about (-12.2, 31.5, 28, 63.3))
       3) converts to .parquet and .csv (using ID inside the cropped area
-         starting from 0 and ending with 7,366,899)
+         starting from 0 and ending with 7,366,899 and rounding float 
+         values to one decimal to compress the data, as it's step for "rade9d" 
+         is 0.1)
    4) uploads results to the shared folder. 
