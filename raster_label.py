@@ -9,6 +9,8 @@ import time
 import csv
 import argparse
 
+import traceback
+
 parser = argparse.ArgumentParser()
 parser.add_argument('-n', type=int,  help='number of programs to run in parallel, divide x-axis', default=1)
 parser.add_argument('-m', type=int,  help='number of subprograms to run consequently, divide y-axis', default=1)
@@ -109,7 +111,7 @@ def main(args):
                             )# choose between WARNING - INFO - DEBUG
     else:
         logging.basicConfig(format='%(message)s',
-                            level=logging.WARNING)# DEBUG)
+                            level=logging.INFO)# DEBUG)
     logger = logging.getLogger(__name__)
     ##############################################################
     #                       START WORK
@@ -129,15 +131,18 @@ def main(args):
         #print(sys.argv)
         tiles = load_layer(args.tilepath)
         #if args.code
-        global_count = get_intersect_ids_and_areas(int(args.x0), int(args.y0), tiles,
-                                                   args.result_name, args.code,
-                                                   global_count,
-                                                   tile_size_x=pixel_sizes[0],
-                                                   tile_size_y=pixel_sizes[0],
-                                                   metric=qgis_manager.metric,
-                                                   level=0, pixel_sizes=pixel_sizes,
-                                                   logger=logger,
-                                                   )
+        try:
+            global_count = get_intersect_ids_and_areas(int(args.x0), int(args.y0), tiles,
+                                                       args.result_name, args.code,
+                                                       global_count,
+                                                       tile_size_x=pixel_sizes[0],
+                                                       tile_size_y=pixel_sizes[0],
+                                                       metric=qgis_manager.metric,
+                                                       level=0, pixel_sizes=pixel_sizes,
+                                                       logger=logger,
+                                                       )
+        except Exception:
+            traceback.print_exc()
     end = time.time()
     print(f"Elapsed time {(end - start) / 60.0:.2} minutes")
     return 0

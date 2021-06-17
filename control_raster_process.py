@@ -95,6 +95,12 @@ def main(args):
                             level=logging.WARNING)  # DEBUG)
     logger = logging.getLogger(__name__)
 
+    logger.setLevel(getattr(logging, "DEBUG"))
+
+    fh = logging.FileHandler(log_file)
+    fh.setLevel(logging.DEBUG)
+    logger.addHandler(fh)
+
     # get tiles and extents for country(ies) by NUTS code
     code = args.code
     nuts = [code, ]
@@ -190,6 +196,7 @@ def main(args):
                 except:
                     with open(log_file, 'a+') as f:
                         f.write(f"{i} {j}\n")
+                    logging.exception()
                     print("EXCEPTION")
 
     elif args.alg_type == "dist":
