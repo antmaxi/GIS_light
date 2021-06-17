@@ -252,22 +252,26 @@ def main(args):
         if args.extension == ".parquet":
             if args.from_tgz:
                 pass
-            for filepath_curr in sorted(glob.glob(os.path.join(folder_device_raw_current, "*.tif"))):
-                filename_curr = Path(filepath_curr).stem
-                if filename_curr not in made_parquets:
-                    filepaths_tif.append(filepath_curr)
-
-            # filepaths = filepaths[0:1]  # TODO delete not in debug
-
-            # first do parquet to csv, then tif - parquet - csv
-            if args.parquet_to_csv and not filepaths_parquet:
+            if args.parquet_to_csv:
+                for filepath_curr in sorted(glob.glob(os.path.join(folder_result, "*.parquet"))):
+                    filename_curr = Path(filepath_curr).stem
+                    if filename_curr not in made_csvs:
+                        filepaths_parquet.append(filepath_curr)
+            # first do parquet to csv if can, then tif - parquet - csv
+            if filepaths_parquet:
                 func = convert_parquet_to_csv
                 filepaths = filepaths_parquet
                 logger.debug(f"Process parquet_to_csv")
             else:
+                for filepath_curr in sorted(glob.glob(os.path.join(folder_device_raw_current, "*.tif"))):
+                    filename_curr = Path(filepath_curr).stem
+                    if filename_curr not in made_parquets:
+                        filepaths_tif.append(filepath_curr)
                 func = convert_geotiff_to_parquet
                 filepaths = filepaths_tif
                 logger.debug(f"Process geotiff_to_parquet")
+            # filepaths = filepaths[0:1]  # TODO delete not in debug
+
         # only existing parquets to csv
         elif args.extension == ".csv":
             # + [Path(f).stem
@@ -283,7 +287,7 @@ def main(args):
             logger.debug(f"Process parquet_to_csv")
         if not filepaths:
             break
-        logger.debug(" ".join(filepaths))
+        logger.debug(" ".join(map(get_first_number_from_string, filepaths)))
         # dates = ([re.findall(r'\d+', Path(f).stem)[0] for f in files])
         with parallel_executor as executor:
 
