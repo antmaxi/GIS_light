@@ -86,8 +86,10 @@ def convert_parquet_to_csv(path_parquet, args):
                 logger.debug(f"Round to 2 decimals")
             elif filename.endswith("cf_cvg"):
                 pass
+            elif filename.endswith("cvg"):
+                pass
             else:
-                raise ValueError("not know type of filename")
+                raise ValueError("not known type of filename")
         elif args.type in ("cloud_cover",):
             pass
         else:
@@ -103,10 +105,10 @@ def convert_parquet_to_csv(path_parquet, args):
             if (sys.getsizeof(path_csv) == sys.getsizeof(path_device_csv)):
                 if os.path.exists(path_csv):
                     os.remove(path_csv)
-                    logger.debug(f"Deleted {path_csv}")
+                    logger.debug(f"Deleted csv {path_csv}")
                 if os.path.exists(path_parquet):
                     os.remove(path_parquet)
-                    logger.debug(f"Deleted {path_parquet}")
+                    logger.debug(f"Deleted parquet {path_parquet}")
         # os.remove(path_parquet)
         return get_first_number_from_string(filename)
     except Exception as exc:
@@ -116,7 +118,7 @@ def convert_parquet_to_csv(path_parquet, args):
         traceback.print_exc()
         if os.path.exists(path_csv):
             os.remove(path_csv)
-            logger.debug(f"Deleted {path_csv}")
+            logger.debug(f"Deleted csv {path_csv}")
         return None
 
 
@@ -173,11 +175,11 @@ def convert_geotiff_to_parquet(file_path, args):
         # delete used files
         if os.path.exists(path_raster_cropped):
             os.remove(path_raster_cropped)
-            logger.debug(f"Deleted {path_raster_cropped}")
+            logger.debug(f"Deleted cropped {path_raster_cropped}")
         if args.delete:
             if os.path.exists(path_raster):
                 os.remove(path_raster)
-                logger.debug(f"Deleted {path_raster}")
+                logger.debug(f"Deleted raster {path_raster}")
         # upload result to device
         path_result_device = os.path.join(folder_device_processed_parquet, args.type, filename + ".parquet")
         logger.debug(f"Started uploading of {path_parquet}")
@@ -196,7 +198,7 @@ def convert_geotiff_to_parquet(file_path, args):
         traceback.print_exc()
         if os.path.exists(path_parquet):
             os.remove(path_parquet)
-            logger.debug(f"Deleted {path_parquet}")
+            logger.debug(f"Deleted parquet {path_parquet}")
         return None
 
     try:
@@ -204,7 +206,7 @@ def convert_geotiff_to_parquet(file_path, args):
             convert_parquet_to_csv(path_parquet, args)
             if args.delete and os.path.exists(path_parquet):
                 os.remove(path_parquet)
-                logger.debug(f"Deleted {path_parquet}")
+                logger.debug(f"Deleted parquet {path_parquet}")
     except Exception as exc:
         with open(local_log_file, 'a+') as f:
             f.write(f"{date} {exc}\n")
@@ -212,7 +214,7 @@ def convert_geotiff_to_parquet(file_path, args):
         traceback.print_exc()
         if os.path.exists(path_csv):
             os.remove(path_csv)
-            logger.debug(f"Deleted {path_csv}")
+            logger.debug(f"Deleted csv {path_csv}")
         return None
     return date
 
@@ -287,7 +289,11 @@ def main(args):
             logger.debug(f"Process parquet_to_csv")
         if not filepaths:
             break
-        logger.debug(" ".join(map(get_first_number_from_string, filepaths)))
+
+        def get_first_number_in_filename_from_path(path):
+            get_first_number_from_string(Path(path).stem)
+
+        logger.debug(" ".join(map(get_first_number_in_filename_from_path, filepaths)))
         # dates = ([re.findall(r'\d+', Path(f).stem)[0] for f in files])
         with parallel_executor as executor:
 
