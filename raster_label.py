@@ -11,6 +11,8 @@ import argparse
 
 import traceback
 
+import config
+
 parser = argparse.ArgumentParser()
 parser.add_argument('-n', type=int,  help='number of programs to run in parallel, divide x-axis', default=1)
 parser.add_argument('-m', type=int,  help='number of subprograms to run consequently, divide y-axis', default=1)
@@ -79,11 +81,9 @@ def main(args):
 
     if check_intersection:
         if args.code == "LAND":
-            result_header = ['X', 'Y', 'AREA_URB', 'AREA_PERCENT_URB',
-                             'AREA_IND', 'AREA_PERCENT_IND',
-                             'AREA_ROAD', 'AREA_PERCENT_ROAD']
+            result_header = config.header_label_land
         else:
-            result_header = ['X', 'Y', 'NUTS_CODE', 'COMM_ID', 'AREA', 'AREA_PERCENT']
+            result_header = config.header_label_countries
         pixel_sizes = [
             40,
             8,

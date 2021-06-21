@@ -40,7 +40,7 @@ parser.add_argument('--parall_type', type=str, choices=("process", "thread"), he
 parser.add_argument("--parquet_to_csv", default=False, action='store_true',
                     help='whether to convert from parquet to csv after conversion from tif to parquet')
 parser.add_argument("--delete", default=False, action='store_true',
-                    help='whether to delete produced and uploaded to the server files')
+                    help='whether to delete produced temp. and already uploaded to the server files')
 parser.add_argument("--from_tgz", default=False, action='store_true',
                     help='whether to decompress files from .tgz')
 
@@ -100,15 +100,18 @@ def convert_parquet_to_csv(path_parquet, args):
         path_device_csv = os.path.join(folder_device_processed_csv, args.type, filename + ".csv")
         logger.debug(f"Started uploading of {path_csv}")
         shutil.copyfile(path_csv, path_device_csv)
-        logger.debug(f"Uploaded  {path_csv} to {path_device_csv}")
+        logger.info(f"Uploaded  {path_csv} to {path_device_csv}")
         if args.delete:
-            if (sys.getsizeof(path_csv) == sys.getsizeof(path_device_csv)):
-                if os.path.exists(path_csv):
+            if os.path.exists(path_csv):
+                if sys.getsizeof(path_csv) == sys.getsizeof(path_device_csv):
                     os.remove(path_csv)
                     logger.debug(f"Deleted csv {path_csv}")
+                else:
+                    logger.debug(f"Didn't delete csv {path_csv}, different sizes " +
+                                 f"{sys.getsizeof(path_csv)} {sys.getsizeof(path_device_csv)}")
                 if os.path.exists(path_parquet):
                     os.remove(path_parquet)
-                    logger.debug(f"Deleted parquet {path_parquet}")
+                    logger.debug(f"Deleted parquet {path_parquet} from parquet_to_csv")
         # os.remove(path_parquet)
         return get_first_number_from_string(filename)
     except Exception as exc:
@@ -184,7 +187,7 @@ def convert_geotiff_to_parquet(file_path, args):
         path_result_device = os.path.join(folder_device_processed_parquet, args.type, filename + ".parquet")
         logger.debug(f"Started uploading of {path_parquet}")
         shutil.copyfile(path_parquet, path_result_device)
-        logger.debug(f"Uploaded {path_parquet} to {path_result_device}")
+        logger.info(f"Uploaded {path_parquet} to {path_result_device}")
         # TODO update list of files - account for python newly updated ones
     except (KeyboardInterrupt, SystemExit):
         if os.path.exists(path_parquet):
@@ -206,7 +209,7 @@ def convert_geotiff_to_parquet(file_path, args):
             convert_parquet_to_csv(path_parquet, args)
             if args.delete and os.path.exists(path_parquet):
                 os.remove(path_parquet)
-                logger.debug(f"Deleted parquet {path_parquet}")
+                logger.debug(f"Deleted parquet {path_parquet} from tiff_to_parquet")
     except Exception as exc:
         with open(local_log_file, 'a+') as f:
             f.write(f"{date} {exc}\n")
@@ -291,9 +294,9 @@ def main(args):
             break
 
         def get_first_number_in_filename_from_path(path):
-            get_first_number_from_string(Path(path).stem)
+            get_first_number_from_string(Path(path).name)
 
-        logger.debug(" ".join(map(get_first_number_in_filename_from_path, filepaths)))
+        logger.debug(" ".join(filepaths))#map(get_first_number_in_filename_from_path, filepaths)))
         # dates = ([re.findall(r'\d+', Path(f).stem)[0] for f in files])
         with parallel_executor as executor:
 

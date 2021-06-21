@@ -3,13 +3,15 @@ import argparse
 import os
 import glob
 
+import config
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--result_name', type=str, help='name of the file with tiles', default="None")
+parser.add_argument('--result_name', type=str, help='name of the file with tiles', default="label")
 parser.add_argument('--country', type=str, help='name of the country to process', default=None)
 parser.add_argument('--pattern', type=str, help='relative pattern of files to process', default=None)
 
 def main(args):
-    folder = os.path.join(os.getcwd(), "saved")  #"pixel")
+    folder = os.path.join(os.getcwd(), "label", "land_use")  #"pixel")
     if args.country is not None and args.pattern is None:
         args.pattern = os.path.join(folder,
                                    ("*" + args.result_name + "_"
@@ -28,11 +30,15 @@ def main(args):
     if os.path.exists(result_name):
         print("File exists")
         return 1
-
-    df0 = pd.DataFrame(columns=['X', 'Y', 'NUTS_CODE', 'COMM_ID', 'AREA', 'AREA_PERCENT'])
+    if args.country == "LAND":
+        cols = config.header_label_land
+    else:
+        cols = config.header_label_countries
+    df0 = pd.DataFrame(columns=cols)
     list_of_dfs =[df0,]
     n_rows = []
-    for ind, f in enumerate(glob.glob(os.path.join(os.getcwd(), args.pattern))):
+    print(args.pattern)
+    for ind, f in enumerate(glob.glob(os.path.join(folder, args.pattern))):
         print(f)
     print(f"\nWill create file {result_name}")
     answer = input("Continue? If yes, type 'y', else smth different\n")
@@ -40,7 +46,7 @@ def main(args):
         print("Aborted")
         return 1
 
-    for ind, f in enumerate(glob.glob(os.path.join(os.getcwd(), args.pattern))):
+    for ind, f in enumerate(glob.glob(os.path.join(folder, args.pattern))):
         print(f)
         df = pd.read_csv(f, header=0)  # if ind == 0 else 1)
         list_of_dfs.append(df)
