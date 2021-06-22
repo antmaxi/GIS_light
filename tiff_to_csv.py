@@ -103,12 +103,12 @@ def convert_parquet_to_csv(path_parquet, args):
         logger.info(f"Uploaded  {path_csv} to {path_device_csv}")
         if args.delete:
             if os.path.exists(path_csv):
-                if sys.getsizeof(path_csv) == sys.getsizeof(path_device_csv):
+                if os.path.getsize(path_csv) == os.path.getsize(path_device_csv):
                     os.remove(path_csv)
                     logger.debug(f"Deleted csv {path_csv}")
                 else:
                     logger.debug(f"Didn't delete csv {path_csv}, different sizes " +
-                                 f"{sys.getsizeof(path_csv)} {sys.getsizeof(path_device_csv)}")
+                                 f"{os.path.getsize(path_csv)} {os.path.getsize(path_device_csv)}")
                 if os.path.exists(path_parquet):
                     os.remove(path_parquet)
                     logger.debug(f"Deleted parquet {path_parquet} from parquet_to_csv")
@@ -145,11 +145,11 @@ def convert_geotiff_to_parquet(file_path, args):
         # download raster to process
         path_raster = os.path.join(folder_to_process, filename + ".tif")
         if args.type in ("cloud_cover", "rade9d"):
-            if not os.path.exists(path_raster) or (sys.getsizeof(path_raster) != sys.getsizeof(file_path)):
+            if not os.path.exists(path_raster) or (os.path.getsize(path_raster) != os.path.getsize(file_path)):
                 shutil.copyfile(file_path, path_raster)
                 logger.debug(f"Downloaded {file_path} to {path_raster}")
             else:
-                logger.debug(f"File {path_raster} is of the right size, no need to download again")
+                logger.debug(f"File {path_raster} is of the right size {os.path.getsize}, no need to download again")
 
         # get one area - approx Western Europe. Type e.g. XYZ or GTIFF
         com_string = "gdal_translate -of XYZ -q -srcwin " + str(x1) + ", " + str(y1) + ", " + str(
@@ -385,5 +385,11 @@ if __name__ == '__main__':
     dx = x2 - x1 + 1  # 9650
     dy = y2 - y1 + 1  # 7634
     # dx * dy = total pixels = 73668100
-
-    main(args)
+    try:
+        main(args)
+    except KeyboardInterrupt:
+            print('Interrupted')
+            try:
+                sys.exit(1)
+            except SystemExit:
+                os._exit(1)
