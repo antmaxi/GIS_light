@@ -56,14 +56,22 @@ def convert_parquet_to_csv(path_parquet, args):
     date = get_first_number_from_string(filename)
     local_log_file = os.path.join(folder_logs, date + args.extension + ".log")
 
-    dir = os.path.dirname(path_parquet)
-    path_csv = os.path.join(dir, filename + ".csv")
+    path_local_csv = os.path.join(folder_result, filename + ".csv")
+    path_device_csv = os.path.join(folder_device_processed_csv_current, filename + ".csv")
 
     with open(local_log_file, 'w+'):
         pass
     try:
-        df = pd.read_parquet(path_parquet)
-        logger.debug(f"Read parquet from {path_parquet}")
+        # parquet copy from device to local, process and upload csv
+        if args.extension == ".csv":
+            path_device_parquet = path_parquet
+            path_local_parquet = os.path.join(folder_result, filename + ".parquet")
+            shutil.copyfile(path_device_parquet, path_local_parquet)
+            logger.info(f"Downloaded  {filename}")
+        else:
+            path_local_parquet = path_parquet
+        df = pd.read_parquet(path_local_parquet)
+        logger.debug(f"Read parquet from {path_local_parquet}")
 
         def fn(row):
             # print(row.X, row.Y, row.X + (row.Y - y1) * dx - x1)
@@ -71,7 +79,7 @@ def convert_parquet_to_csv(path_parquet, args):
 
         # get single ID instead of X and Y
         # df.apply(lambda row: row.X + (row.Y - y1) * dx - x1, axis=1)  # size of raster is 86401 x 33601
-        df['ID'] = df["X"] - x1 + (df["Y"] - y1)
+        df['ID'] = df["X"] - x1 + (df["Y"] - y1) * dx
         df = df.drop(columns=['X', 'Y'])  # int32 max 2,147,483,647
         # round float values to get lesser size
         # in rade9d step of value is 0.1, therefore 1 decimal is enough
@@ -95,23 +103,22 @@ def convert_parquet_to_csv(path_parquet, args):
         else:
             raise ValueError("Not known type of processing")
         df = df[["ID", "VALUE"]]
-        df.to_csv(path_csv, index=False)
-        logger.debug(f"Dumped parquet to {path_csv}")
-        path_device_csv = os.path.join(folder_device_processed_csv, args.type, filename + ".csv")
-        logger.debug(f"Started uploading of {path_csv}")
-        shutil.copyfile(path_csv, path_device_csv)
-        logger.info(f"Uploaded  {path_csv} to {path_device_csv}")
+        df.to_csv(path_local_csv, index=False)
+        logger.debug(f"Processed and dumped parquet to {path_local_csv}")
+        logger.debug(f"Started uploading of {path_local_csv} to {path_device_csv}")
+        shutil.copyfile(path_local_csv, path_device_csv)
+        logger.info(f"Uploaded  {path_local_csv} to {path_device_csv}")
         if args.delete:
-            if os.path.exists(path_csv):
-                if os.path.getsize(path_csv) == os.path.getsize(path_device_csv):
-                    os.remove(path_csv)
-                    logger.debug(f"Deleted csv {path_csv}")
+            if os.path.exists(path_local_csv):
+                if os.path.getsize(path_local_csv) == os.path.getsize(path_device_csv):
+                    os.remove(path_local_csv)
+                    logger.debug(f"Deleted csv {path_local_csv}")
                 else:
-                    logger.debug(f"Didn't delete csv {path_csv}, different sizes " +
-                                 f"{os.path.getsize(path_csv)} {os.path.getsize(path_device_csv)}")
-                if os.path.exists(path_parquet):
-                    os.remove(path_parquet)
-                    logger.debug(f"Deleted parquet {path_parquet} from parquet_to_csv")
+                    logger.debug(f"Didn't delete csv {path_local_csv}, different sizes " +
+                                 f"{os.path.getsize(path_local_csv)} {os.path.getsize(path_device_csv)}")
+                if os.path.exists(path_local_parquet):
+                    os.remove(path_local_parquet)
+                    logger.debug(f"Deleted parquet {path_local_parquet} from parquet_to_csv")
         # os.remove(path_parquet)
         return get_first_number_from_string(filename)
     except Exception as exc:
@@ -119,9 +126,9 @@ def convert_parquet_to_csv(path_parquet, args):
             f.write(f"{date} {exc}\n")
         print("EXCEPTION")
         traceback.print_exc()
-        if os.path.exists(path_csv):
-            os.remove(path_csv)
-            logger.debug(f"Deleted csv {path_csv}")
+        if os.path.exists(path_local_csv):
+            os.remove(path_local_csv)
+            logger.debug(f"Deleted csv {path_local_csv}")
         return None
 
 
@@ -283,10 +290,11 @@ def main(args):
             #   for f in
             #   list(glob.glob(os.path.join(folder_local_data, args.type, "result", "*" + ".csv")))]
 
-            for filepath_curr in sorted(glob.glob(os.path.join(folder_result, "*.parquet"))):
-                filename_curr = Path(filepath_curr).stem
-                if filename_curr not in made_csvs:
-                    filepaths_parquet.append(filepath_curr)
+            for stem_parquet in sorted(made_parquets):
+                if stem_parquet not in made_csvs:
+                    filepaths_parquet.append(os.path.join(folder_device_processed_parquet_current,
+                                                          stem_parquet+".parquet"))
+            filepaths_parquet = sorted(list(set(filepaths_parquet)))
             func = convert_parquet_to_csv
             filepaths = filepaths_parquet
             logger.debug(f"Process parquet_to_csv")
