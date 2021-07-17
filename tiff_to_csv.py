@@ -66,6 +66,7 @@ def convert_parquet_to_csv(path_parquet, args):
         if args.extension == ".csv":
             path_device_parquet = path_parquet
             path_local_parquet = os.path.join(folder_result, filename + ".parquet")
+            logger.debug(f"Started downloading of {path_device_parquet} to {path_local_parquet}")
             shutil.copyfile(path_device_parquet, path_local_parquet)
             logger.info(f"Downloaded  {filename}")
         else:
@@ -80,6 +81,7 @@ def convert_parquet_to_csv(path_parquet, args):
         # get single ID instead of X and Y
         # df.apply(lambda row: row.X + (row.Y - y1) * dx - x1, axis=1)  # size of raster is 86401 x 33601
         df['ID'] = df["X"] - x1 + (df["Y"] - y1) * dx
+
         df = df.drop(columns=['X', 'Y'])  # int32 max 2,147,483,647
         # round float values to get lesser size
         # in rade9d step of value is 0.1, therefore 1 decimal is enough
@@ -92,9 +94,9 @@ def convert_parquet_to_csv(path_parquet, args):
             if filename.endswith("avg_rade9h"):
                 df["VALUE"] = df["VALUE"].round(2)
                 logger.debug(f"Round to 2 decimals")
-            elif filename.endswith("cf_cvg"):
+            elif filename.endswith(".cf_cvg"):
                 pass
-            elif filename.endswith("cvg"):
+            elif filename.endswith(".cvg"):
                 pass
             else:
                 raise ValueError("not known type of filename")
@@ -104,7 +106,8 @@ def convert_parquet_to_csv(path_parquet, args):
             raise ValueError("Not known type of processing")
         df = df[["ID", "VALUE"]]
         df.to_csv(path_local_csv, index=False)
-        logger.debug(f"Processed and dumped parquet to {path_local_csv}")
+        logger.debug(f"{df['ID'].nunique()} Processed and dumped parquet to csv {path_local_csv}"
+                     f"with size {os.path.getsize(path_local_csv) / pow(2, 20):.1f} MB")
         logger.debug(f"Started uploading of {path_local_csv} to {path_device_csv}")
         shutil.copyfile(path_local_csv, path_device_csv)
         logger.info(f"Uploaded  {path_local_csv} to {path_device_csv}")
@@ -152,11 +155,24 @@ def convert_geotiff_to_parquet(file_path, args):
         # download raster to process
         path_raster = os.path.join(folder_to_process, filename + ".tif")
         if args.type in ("cloud_cover", "rade9d"):
-            if not os.path.exists(path_raster) or (os.path.getsize(path_raster) != os.path.getsize(file_path)):
+            flag_download_tiff = False
+            if os.path.exists(path_raster):
+                if os.path.getsize(path_raster) != os.path.getsize(file_path):
+                    flag_download_tiff = True
+                    os.remove(path_raster)
+                    logger.debug(f"Deleted {path_raster} of wrong size {os.path.getsize(path_raster)} "
+                                 f"(need {os.path.getsize(file_path)}")
+                else:
+                    logger.debug(f"Raster {path_raster} exists and of the rigth size {os.path.getsize(path_raster)}")
+            else:
+                flag_download_tiff = True
+            if flag_download_tiff:
+                logger.debug(f"Started downloading {file_path} to {path_raster}")
                 shutil.copyfile(file_path, path_raster)
                 logger.debug(f"Downloaded {file_path} to {path_raster}")
-            else:
-                logger.debug(f"File {path_raster} is of the right size {os.path.getsize}, no need to download again")
+            elif (os.path.getsize(path_raster) == os.path.getsize(file_path)):
+                logger.debug(f"File {path_raster} is of the right size {os.path.getsize(path_raster)}, "
+                             f"no need to download again")
 
         # get one area - approx Western Europe. Type e.g. XYZ or GTIFF
         com_string = "gdal_translate -of XYZ -q -srcwin " + str(x1) + ", " + str(y1) + ", " + str(
@@ -180,19 +196,19 @@ def convert_geotiff_to_parquet(file_path, args):
         assert df.shape[0] == dx * dy, f"size {df.shape[0]} instead of {dx * dy}"
 
         df.to_parquet(path_parquet, index=False)
-        logger.debug(f"Size of resulting file {path_parquet} is "
+        logger.debug(f"Size of resulting parquet {path_parquet} is "
                      f"{os.path.getsize(path_parquet) / pow(2, 20):.1f} MB")
         # delete used files
         if os.path.exists(path_raster_cropped):
             os.remove(path_raster_cropped)
             logger.debug(f"Deleted cropped {path_raster_cropped}")
         if args.delete:
-            if os.path.exists(path_raster):
+            if 0 and os.path.exists(path_raster): # TODO delete 0
                 os.remove(path_raster)
                 logger.debug(f"Deleted raster {path_raster}")
         # upload result to device
         path_result_device = os.path.join(folder_device_processed_parquet, args.type, filename + ".parquet")
-        logger.debug(f"Started uploading of {path_parquet}")
+        logger.debug(f"Started uploading of {path_parquet} to {path_result_device}")
         shutil.copyfile(path_parquet, path_result_device)
         logger.info(f"Uploaded {path_parquet} to {path_result_device}")
         # TODO update list of files - account for python newly updated ones
@@ -259,7 +275,8 @@ def main(args):
         filepaths_tif = []
         filepaths_parquet = []
         # TODO better system
-        # .parquet to make from tif parquets, then flag --parquet_to_csv does also to csv conversion after
+        # extension == ".parquet":
+        # make parquets from tif, then if flag --parquet_to_csv does also to csv conversion after
         # get filepaths to process
         if args.extension == ".parquet":
             if args.from_tgz:
