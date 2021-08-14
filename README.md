@@ -16,6 +16,9 @@ For example to run:
 
 Data [description](https://eogdata.mines.edu/products/vnl/)
 
+Remark: in rade9d files from the dates (20190331, 20190531, 20190731), and in cloud_cover - 20191031, 
+all are missing on the site of EOG.
+
 ### Pixel processing
 `qgis_utils.py` — useful functions to work with QGIS layers
 

@@ -154,7 +154,7 @@ def convert_geotiff_to_parquet(file_path, args):
     try:
         # download raster to process
         path_raster = os.path.join(folder_to_process, filename + ".tif")
-        if args.type in ("cloud_cover", "rade9d"):
+        if 1: #args.type in ("cloud_cover", "rade9d"):  # TODO automize for monthly data too
             flag_download_tiff = False
             if os.path.exists(path_raster):
                 if os.path.getsize(path_raster) != os.path.getsize(file_path):
@@ -163,16 +163,16 @@ def convert_geotiff_to_parquet(file_path, args):
                     logger.debug(f"Deleted {path_raster} of wrong size {os.path.getsize(path_raster)} "
                                  f"(need {os.path.getsize(file_path)}")
                 else:
-                    logger.debug(f"Raster {path_raster} exists and of the rigth size {os.path.getsize(path_raster)}")
+                    logger.debug(f"Raster {path_raster} exists and of the right size {os.path.getsize(path_raster)}")
             else:
                 flag_download_tiff = True
             if flag_download_tiff:
                 logger.debug(f"Started downloading {file_path} to {path_raster}")
                 shutil.copyfile(file_path, path_raster)
                 logger.debug(f"Downloaded {file_path} to {path_raster}")
-            elif (os.path.getsize(path_raster) == os.path.getsize(file_path)):
-                logger.debug(f"File {path_raster} is of the right size {os.path.getsize(path_raster)}, "
-                             f"no need to download again")
+            #elif (os.path.getsize(path_raster) == os.path.getsize(file_path)):
+            #    logger.debug(f"File {path_raster} is of the right size {os.path.getsize(path_raster)}, "
+            #                 f"no need to download again")
 
         # get one area - approx Western Europe. Type e.g. XYZ or GTIFF
         com_string = "gdal_translate -of XYZ -q -srcwin " + str(x1) + ", " + str(y1) + ", " + str(
@@ -203,7 +203,7 @@ def convert_geotiff_to_parquet(file_path, args):
             os.remove(path_raster_cropped)
             logger.debug(f"Deleted cropped {path_raster_cropped}")
         if args.delete:
-            if 0 and os.path.exists(path_raster): # TODO delete 0
+            if os.path.exists(path_raster):
                 os.remove(path_raster)
                 logger.debug(f"Deleted raster {path_raster}")
         # upload result to device
